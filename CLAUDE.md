@@ -19,6 +19,12 @@ npm run preview # Preview production build
 
 Set `GEMINI_API_KEY` in `.env.local` (required for AI Studio integration).
 
+## Deployment
+
+- **Live URL**: https://nca2student55-crypto.github.io/cheongdam-partners-vip/
+- GitHub Actions workflow (`.github/workflows/deploy.yml`) auto-deploys on push to `main`
+- `base: '/cheongdam-partners-vip/'` is set in `vite.config.ts` for GitHub Pages
+
 ## Architecture
 
 ### State Management
