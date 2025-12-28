@@ -11,7 +11,9 @@
       "Bash(git push:*)",
       "WebFetch(domain:nca2student55-crypto.github.io)",
       "WebFetch(domain:github.com)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(curl:*)",
+      "Bash(cat:*)"
     ]
   }
 }
