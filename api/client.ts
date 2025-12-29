@@ -37,10 +37,14 @@ async function apiGet<T>(action: string, params: Record<string, string> = {}): P
 }
 
 async function apiPost<T>(action: string, data: any): Promise<T> {
+  // Google Apps Script는 POST 후 리다이렉트를 사용함
+  // text/plain을 사용해야 CORS preflight를 피할 수 있음
   const response = await fetch(API_URL, {
     method: 'POST',
+    mode: 'cors',
+    redirect: 'follow',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'text/plain',
     },
     body: JSON.stringify({ action, ...data }),
   });
