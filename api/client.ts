@@ -1,10 +1,9 @@
 // Google Sheets API 클라이언트
-// Google Apps Script 웹 앱 URL을 설정하세요
 
 import { Customer, PointHistory, Notification } from '../types';
 
-// Apps Script 웹 앱 URL (배포 후 설정)
-const API_URL = import.meta.env.VITE_API_URL || '';
+// Apps Script 웹 앱 URL
+const API_URL = 'https://script.google.com/macros/s/AKfycbwFCmd3ZRs_Q_NsLUyeRDsSIh5atzMQNlMnczlszQ4ugZswmrLu1jiB_oem4B96muMU/exec';
 
 // 로컬 스토리지 키 (폴백용)
 const STORAGE_KEYS = {
