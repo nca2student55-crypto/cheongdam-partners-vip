@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { ViewState, Customer, PointHistory, Notification, Announcement } from './types';
-import { initialCustomers, initialPointHistory, initialNotifications } from './mockData';
 import { api, isApiAvailable, toCustomer, toNotification, toAnnouncement } from './api/client';
 import { supabase } from './api/supabase';
 
@@ -35,43 +34,21 @@ const App: React.FC = () => {
   const loadInitialData = async () => {
     setIsLoading(true);
     try {
-      if (isApiAvailable()) {
-        const [data, activeAnnouncements] = await Promise.all([
-          api.getAllData(),
-          api.getActiveAnnouncements(),
-        ]);
-        setCustomers(data.customers.length > 0 ? data.customers : initialCustomers);
-        setPointHistory(data.pointHistory.length > 0 ? data.pointHistory : initialPointHistory);
-        setNotifications(data.notifications.length > 0 ? data.notifications : initialNotifications);
-        setAnnouncements(activeAnnouncements);
-      } else {
-        const storedCustomers = localStorage.getItem('cp_customers');
-        const storedHistory = localStorage.getItem('cp_point_history');
-        const storedNotifications = localStorage.getItem('cp_notifications');
-
-        if (storedCustomers) setCustomers(JSON.parse(storedCustomers));
-        else {
-          setCustomers(initialCustomers);
-          localStorage.setItem('cp_customers', JSON.stringify(initialCustomers));
-        }
-
-        if (storedHistory) setPointHistory(JSON.parse(storedHistory));
-        else {
-          setPointHistory(initialPointHistory);
-          localStorage.setItem('cp_point_history', JSON.stringify(initialPointHistory));
-        }
-
-        if (storedNotifications) setNotifications(JSON.parse(storedNotifications));
-        else {
-          setNotifications(initialNotifications);
-          localStorage.setItem('cp_notifications', JSON.stringify(initialNotifications));
-        }
-      }
+      const [data, activeAnnouncements] = await Promise.all([
+        api.getAllData(),
+        api.getActiveAnnouncements(),
+      ]);
+      setCustomers(data.customers);
+      setPointHistory(data.pointHistory);
+      setNotifications(data.notifications);
+      setAnnouncements(activeAnnouncements);
     } catch (error) {
       console.error('데이터 로드 실패:', error);
-      const storedCustomers = localStorage.getItem('cp_customers');
-      if (storedCustomers) setCustomers(JSON.parse(storedCustomers));
-      else setCustomers(initialCustomers);
+      // Supabase 연결 실패 시 빈 배열로 시작
+      setCustomers([]);
+      setPointHistory([]);
+      setNotifications([]);
+      setAnnouncements([]);
     } finally {
       setIsLoading(false);
     }
@@ -177,9 +154,6 @@ const App: React.FC = () => {
       await api.updateCustomer(updated);
       const next = customers.map(c => c.id === updated.id ? updated : c);
       setCustomers(next);
-      if (!isApiAvailable()) {
-        localStorage.setItem('cp_customers', JSON.stringify(next));
-      }
       if (currentUser?.id === updated.id) setCurrentUser(updated);
     } catch (error) {
       console.error('고객 정보 업데이트 실패:', error);
@@ -196,11 +170,6 @@ const App: React.FC = () => {
       setCustomers(updatedCustomers);
       setPointHistory([...pointHistory, ...result.pointHistory]);
       setNotifications([...notifications, ...result.notifications]);
-      if (!isApiAvailable()) {
-        localStorage.setItem('cp_customers', JSON.stringify(updatedCustomers));
-        localStorage.setItem('cp_point_history', JSON.stringify([...pointHistory, ...result.pointHistory]));
-        localStorage.setItem('cp_notifications', JSON.stringify([...notifications, ...result.notifications]));
-      }
     } catch (error) {
       console.error('포인트 적립 실패:', error);
     }
@@ -216,11 +185,6 @@ const App: React.FC = () => {
       setCustomers(updatedCustomers);
       setPointHistory([...pointHistory, ...result.pointHistory]);
       setNotifications([...notifications, ...result.notifications]);
-      if (!isApiAvailable()) {
-        localStorage.setItem('cp_customers', JSON.stringify(updatedCustomers));
-        localStorage.setItem('cp_point_history', JSON.stringify([...pointHistory, ...result.pointHistory]));
-        localStorage.setItem('cp_notifications', JSON.stringify([...notifications, ...result.notifications]));
-      }
     } catch (error) {
       console.error('포인트 차감 실패:', error);
       throw error;
@@ -232,9 +196,6 @@ const App: React.FC = () => {
       await api.deleteCustomer(id);
       const next = customers.filter(c => c.id !== id);
       setCustomers(next);
-      if (!isApiAvailable()) {
-        localStorage.setItem('cp_customers', JSON.stringify(next));
-      }
     } catch (error) {
       console.error('고객 삭제 실패:', error);
     }
@@ -250,9 +211,6 @@ const App: React.FC = () => {
       }
     }
     setCustomers(newCustomers);
-    if (!isApiAvailable()) {
-      localStorage.setItem('cp_customers', JSON.stringify(newCustomers));
-    }
   };
 
   const handleSetNotifications = async (nList: Notification[]) => {
@@ -269,9 +227,6 @@ const App: React.FC = () => {
       }
     }
     setNotifications(next);
-    if (!isApiAvailable()) {
-      localStorage.setItem('cp_notifications', JSON.stringify(next));
-    }
   };
 
   const renderView = () => {
