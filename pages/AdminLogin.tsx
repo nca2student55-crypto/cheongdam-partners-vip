@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { ViewState } from '../types';
 import { Button, Input } from '../components/UI';
+import { api } from '../api/client';
 
 interface Props {
   setView: (v: ViewState) => void;
@@ -9,15 +10,34 @@ interface Props {
 }
 
 const AdminLogin: React.FC<Props> = ({ setView, setIsAdmin }) => {
-  const [adminId, setAdminId] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
-    if (adminId === 'rkddygks0') {
-      setIsAdmin(true);
-      setView('ADMIN_DASHBOARD');
-    } else {
-      setError('관리자 ID가 일치하지 않습니다.');
+  const handleLogin = async () => {
+    if (!password) {
+      setError('비밀번호를 입력해주세요.');
+      return;
+    }
+
+    setError('');
+    setIsLoading(true);
+
+    try {
+      // 고정 계정 'admin'으로 비밀번호만 확인
+      const admin = await api.verifyAdmin('admin', password);
+
+      if (admin) {
+        setIsAdmin(true);
+        setView('ADMIN_DASHBOARD');
+      } else {
+        setError('비밀번호가 일치하지 않습니다.');
+      }
+    } catch (err) {
+      console.error('관리자 로그인 실패:', err);
+      setError('로그인에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -29,20 +49,21 @@ const AdminLogin: React.FC<Props> = ({ setView, setIsAdmin }) => {
 
       <div className="text-center mb-10">
         <h2 className="text-2xl font-bold text-navy-800">관리자 로그인</h2>
-        <p className="text-gray-500 mt-2">인증 ID를 입력해주세요</p>
+        <p className="text-gray-500 mt-2">관리자 비밀번호를 입력해주세요</p>
       </div>
 
-      <Input 
-        label="관리자 ID" 
-        placeholder="아이디 입력" 
-        value={adminId}
-        onChange={(e) => setAdminId(e.target.value)}
+      <Input
+        label="비밀번호"
+        type="password"
+        placeholder="비밀번호 입력"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
       />
 
-      {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+      {error && <p className="text-red-500 text-sm mt-4 mb-4">{error}</p>}
 
-      <Button fullWidth onClick={handleLogin}>
-        확인
+      <Button fullWidth onClick={handleLogin} disabled={isLoading} className="mt-6">
+        {isLoading ? '로그인 중...' : '확인'}
       </Button>
     </div>
   );

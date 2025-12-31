@@ -27,17 +27,35 @@ const PointHistoryView: React.FC<Props> = ({ setView, user, history }) => {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-10 space-y-3">
-        {sortedHistory.map(item => (
-          <Card key={item.id} className="p-4 flex justify-between items-center border-l-4 border-l-gold-400">
-            <div>
-              <div className="text-[10px] text-gray-400 uppercase tracking-wider">
-                {new Date(item.createdAt).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+        {sortedHistory.map(item => {
+          const isPositive = item.points > 0;
+          const pointLabel = item.type === 'earn' ? '포인트 적립' :
+                            item.type === 'use' ? '포인트 사용' :
+                            item.type === 'adjust' ? (isPositive ? '포인트 조정' : '포인트 차감') :
+                            '포인트 변동';
+
+          return (
+            <Card
+              key={item.id}
+              className={`p-4 border-l-4 ${isPositive ? 'border-l-green-400' : 'border-l-red-400'}`}
+            >
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wider">
+                    {new Date(item.createdAt).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                  </div>
+                  <div className="text-sm font-medium text-gray-700">{pointLabel}</div>
+                  {item.reason && (
+                    <div className="text-xs text-gray-500 mt-1">사유: {item.reason}</div>
+                  )}
+                </div>
+                <div className={`text-lg font-bold ${isPositive ? 'text-green-600' : 'text-red-500'}`}>
+                  {isPositive ? '+' : ''}{item.points.toLocaleString()} P
+                </div>
               </div>
-              <div className="text-sm font-medium text-gray-700">포인트 적립</div>
-            </div>
-            <div className="text-lg font-bold text-navy-800">+{item.points.toLocaleString()} P</div>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
 
         {sortedHistory.length === 0 && (
           <div className="text-center py-20 text-gray-400">포인트 이력이 없습니다.</div>

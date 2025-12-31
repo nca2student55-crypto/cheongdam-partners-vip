@@ -1,6 +1,6 @@
 # 프로젝트 인계 문서
 
-> 작성일: 2025-12-28
+> 최종 업데이트: 2026-01-01
 > 프로젝트: 청담 파트너 VIP
 
 ---
@@ -16,90 +16,183 @@
 ```bash
 npm install     # 의존성 설치
 npm run dev     # 개발 서버 실행 (http://localhost:3000)
+npm run build   # 프로덕션 빌드
 ```
 
 ---
 
-## 완료된 작업 내역
+## 🚨 현재 상태 요약
 
-### 1. 초기 프로젝트 설정
-- React 19 + TypeScript + Vite 기반 프로젝트 구성
-- Tailwind CSS (CDN) 스타일링 설정
-- 커스텀 브랜드 색상 정의 (navy, gold)
+### ✅ 완료된 작업
+1. **Supabase 백엔드 마이그레이션** - Google Sheets → Supabase 전환 완료
+2. **회원가입 약관 동의 UI** - 개인정보보호법 준수 약관 동의 단계 추가
+3. **회원가입 승인 시스템** - 관리자 승인 기반 회원가입 플로우 구현
 
-### 2. 핵심 기능 구현
-- **고객 관리**: 회원가입, 로그인, 비밀번호 재설정
-- **포인트 시스템**: 포인트 적립, 이력 조회
-- **알림 시스템**: 포인트 적립 알림
-- **관리자 기능**: 고객 목록, 포인트 일괄 적립, 고객 정보 수정/삭제
-
-### 3. UI/UX 개선 (최근 작업)
-| 작업 내용 | 파일 | 상세 |
-|----------|------|------|
-| 관리자 버튼 위치 변경 | `pages/Main.tsx` | 하단 → 우측 상단으로 이동 |
-| 브랜드명 수정 | 전체 | "청담 파트너스 VIP" → "청담 파트너 VIP" |
-| 내 정보 수정 카드 추가 | `pages/CustomerDashboard.tsx` | 포인트 카드 아래에 프로필 수정 진입점 추가 |
-| 로그아웃 확인 모달 | `pages/CustomerDashboard.tsx` | 뒤로가기 시 로그아웃 경고 팝업 |
-| Card 컴포넌트 onClick 지원 | `components/UI.tsx` | 클릭 가능한 카드 지원 |
-
-### 4. 배포 설정
-- GitHub Pages 배포 워크플로우 구성 (`.github/workflows/deploy.yml`)
-- Vite base path 설정 (`/cheongdam-partners-vip/`)
-- importmap 충돌 해결 (Vite 번들 호환)
+### 🚧 삭제된 기능
+- **Firebase Phone Auth SMS 인증** - 제거됨 (reCAPTCHA 설정 문제로 인해)
 
 ---
 
-## 현재 프로젝트 구조
+## ✅ 완료: Supabase 백엔드
+
+### 연결 정보
+| 항목 | 값 |
+|------|-----|
+| Project URL | https://rbunpzizpkvouhdhxlih.supabase.co |
+| Project Ref | rbunpzizpkvouhdhxlih |
+
+### 테이블 스키마
+
+#### customers
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK, 자동생성 |
+| name | TEXT | 고객명 |
+| phone | TEXT | 전화번호 (UNIQUE) |
+| password | TEXT | 비밀번호 (평문) |
+| company | TEXT | 업체명 (기본값: '') |
+| is_individual | BOOLEAN | 개인 여부 (기본값: true) |
+| total_points | INTEGER | 보유 포인트 (기본값: 0) |
+| status | TEXT | **'pending' / 'active' / 'withdrawn'** |
+| memo | TEXT | 관리자 메모 |
+| created_at | TIMESTAMPTZ | 가입일 |
+| withdrawn_at | TIMESTAMPTZ | 탈퇴일 |
+
+#### point_history
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| customer_id | UUID | FK → customers |
+| points | INTEGER | 포인트 금액 |
+| type | TEXT | 'earn' / 'use' / 'adjust' |
+| created_at | TIMESTAMPTZ | 자동생성 |
+
+#### notifications
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| customer_id | UUID | FK → customers |
+| title | TEXT | 알림 제목 |
+| content | TEXT | 알림 내용 |
+| is_read | BOOLEAN | 읽음 여부 |
+| created_at | TIMESTAMPTZ | 자동생성 |
+
+#### admins
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| username | TEXT | 로그인 ID (UNIQUE) |
+| password | TEXT | 비밀번호 |
+| name | TEXT | 관리자 이름 |
+| created_at | TIMESTAMPTZ | 자동생성 |
+
+### 관리자 계정
+| 아이디 | 비밀번호 |
+|--------|----------|
+| admin | cheongdam2024! |
+
+---
+
+## ✅ 완료: 회원가입 승인 시스템
+
+### 플로우
+```
+[회원가입 플로우]
+메인 → 약관동의 → 회원가입 폼 → "승인 대기" 완료 화면 → 메인
+                                    ↓
+                            관리자 승인 후 로그인 가능
+
+[관리자 승인 플로우]
+관리자 로그인 → 관리자 대시보드 → "승인 대기" 탭 → 개별/일괄 승인
+```
+
+### 고객 상태 (UserStatus)
+| 상태 | 한글 | 설명 |
+|------|------|------|
+| PENDING | 대기 | 회원가입 후 관리자 승인 대기 중 |
+| ACTIVE | 활성 | 승인 완료, 로그인 가능 |
+| WITHDRAWN | 탈퇴 | 탈퇴 처리됨 |
+
+### 주요 변경 파일
+| 파일 | 변경 내용 |
+|------|----------|
+| `types.ts` | UserStatus에 PENDING 추가 |
+| `api/client.ts` | 상태 변환 로직 + 승인 API 3개 추가 |
+| `pages/Signup.tsx` | PENDING 상태 생성 + 약관 동의 + 완료 화면 |
+| `pages/Login.tsx` | PENDING 상태 로그인 차단 |
+| `pages/AdminDashboard.tsx` | 탭 네비게이션 + 승인 대기 목록 UI |
+
+### 승인 API (api/client.ts)
+```typescript
+api.getPendingCustomers()           // 대기 고객 목록 조회
+api.approveCustomer(customerId)     // 단일 승인
+api.approveCustomers(customerIds)   // 일괄 승인
+```
+
+---
+
+## ✅ 완료: 회원가입 약관 동의
+
+### 개인정보보호법 필수 고지 항목
+1. **수집 목적**: VIP 고객 포인트 적립/관리, 서비스 안내
+2. **수집 항목**: 필수(이름, 전화번호, 비밀번호), 선택(업체명)
+3. **보유 기간**: 회원 탈퇴 시까지, 탈퇴 후 즉시 파기
+4. **동의 거부권**: 거부 가능하나 서비스 이용 제한
+
+### 회원가입 단계 (SignupStep)
+```
+TERMS → FORM → 완료
+```
+
+---
+
+## 프로젝트 구조
 
 ```
 project/
-├── App.tsx                 # 메인 앱 (상태 관리, 라우팅)
-├── types.ts                # TypeScript 타입 정의
-├── mockData.ts             # 초기 테스트 데이터
+├── App.tsx                    # 메인 앱 (상태 관리, 라우팅)
+├── types.ts                   # TypeScript 타입 정의
+├── index.html                 # HTML 템플릿
+├── api/
+│   ├── supabase.ts            # Supabase 클라이언트 초기화
+│   └── client.ts              # Supabase API 클라이언트
 ├── components/
-│   └── UI.tsx              # 공통 UI 컴포넌트 (Button, Input, Card)
+│   └── UI.tsx                 # 공통 UI 컴포넌트
 ├── pages/
-│   ├── Main.tsx            # 메인 화면
-│   ├── Login.tsx           # 고객 로그인
-│   ├── Signup.tsx          # 회원가입
-│   ├── AdminLogin.tsx      # 관리자 로그인
-│   ├── AdminDashboard.tsx  # 관리자 대시보드
-│   ├── CustomerDashboard.tsx # 고객 대시보드
-│   ├── ProfileEdit.tsx     # 프로필 수정
-│   ├── PasswordReset.tsx   # 비밀번호 재설정
-│   ├── PointHistory.tsx    # 포인트 이력
-│   └── NotificationList.tsx # 알림 목록
+│   ├── Main.tsx               # 메인 화면
+│   ├── Login.tsx              # 고객 로그인 (PENDING 체크)
+│   ├── Signup.tsx             # 회원가입 (약관동의 → 폼 → 완료)
+│   ├── AdminLogin.tsx         # 관리자 로그인 (비밀번호만)
+│   ├── AdminDashboard.tsx     # 관리자 대시보드 (탭: 승인대기 | 고객목록)
+│   ├── CustomerDashboard.tsx  # 고객 대시보드
+│   ├── ProfileEdit.tsx        # 프로필 수정
+│   ├── PasswordReset.tsx      # 비밀번호 재설정
+│   ├── PointHistory.tsx       # 포인트 이력
+│   └── NotificationList.tsx   # 알림 목록
 └── .github/workflows/
-    └── deploy.yml          # GitHub Pages 배포
+    └── deploy.yml             # GitHub Pages 배포
 ```
 
 ---
 
-## 데이터 저장 방식
+## 삭제된 파일/폴더
 
-현재 **localStorage** 사용 (백엔드 없음):
-- `cp_customers` - 고객 목록
-- `cp_point_history` - 포인트 이력
-- `cp_notifications` - 알림 목록
+| 파일/폴더 | 이유 |
+|----------|------|
+| `firebase/` | Firebase 제거 |
+| `hooks/usePhoneAuth.ts` | SMS 인증 제거 |
+| `google-apps-script/` | Google Sheets 제거 |
 
 ---
 
-## 다음 진행 사항 (제안)
+## 다음 진행 사항
 
 ### 우선순위 높음
-1. **백엔드 연동**: 현재 localStorage → 실제 DB/API 연동 필요
-2. **인증 강화**: 현재 평문 비밀번호 → 암호화 적용
-3. **관리자 인증**: 하드코딩된 관리자 계정 → 보안 인증 시스템
+1. **포인트 사용 기능** - 현재 적립만 가능, 사용/차감 기능 추가
 
 ### 우선순위 중간
-4. **포인트 사용 기능**: 현재 적립만 가능, 사용/차감 기능 추가
-5. **고객 검색/필터**: 관리자 대시보드에서 고객 검색 기능
-6. **포인트 만료 시스템**: 포인트 유효기간 관리
-
-### 우선순위 낮음
-7. **PWA 지원**: 오프라인 사용, 홈 화면 추가
-8. **푸시 알림**: 실시간 알림 기능
-9. **통계 대시보드**: 포인트 적립/사용 통계 시각화
+2. **PWA 지원** - 오프라인 사용, 홈 화면 추가
+3. **통계 대시보드** - 포인트 적립/사용 통계 시각화
 
 ---
 
@@ -107,16 +200,37 @@ project/
 
 | 이슈 | 상태 | 비고 |
 |-----|------|------|
-| localStorage 데이터 브라우저별 분리 | 예상됨 | 백엔드 연동 시 해결 |
-| 관리자 비밀번호 하드코딩 | 알려짐 | `pages/AdminLogin.tsx` 참조 |
+| 관리자 비밀번호 평문 저장 | 알려짐 | 내부용이므로 현 상태 유지 |
+| Tailwind CDN 사용 | 알려짐 | 프로덕션에서는 PostCSS 권장 |
+
+---
+
+## MCP 연결 정보
+
+### Supabase MCP (현재 사용)
+```bash
+claude mcp list  # supabase: ✓ Connected 확인
+```
+
+### Google Sheets MCP (더 이상 사용 안함)
+- 서비스 계정 파일 존재하나 사용하지 않음
+
+---
+
+## 재시작 시 확인사항
+
+1. **개발 서버**: `npm run dev` → http://localhost:3000/cheongdam-partners-vip/
+2. **MCP 연결**: `claude mcp list` → supabase 연결 확인
+3. **회원가입 테스트**: 약관 동의 → 폼 작성 → "승인 대기" 화면 표시
+4. **관리자 승인 테스트**: 관리자 로그인 → 승인 대기 탭 → 승인 버튼
 
 ---
 
 ## 참고 문서
 
 - `CLAUDE.md` - 개발 가이드 및 아키텍처 문서
-- `README.md` - 프로젝트 실행 방법
+- `BACKEND_MIGRATION.md` - Supabase 마이그레이션 상세 문서
 
 ---
 
-*이 문서는 프로젝트 인계를 위해 작성되었습니다.*
+*최종 업데이트: 2026-01-01*

@@ -15,6 +15,7 @@ import PasswordReset from './pages/PasswordReset';
 import PointHistoryView from './pages/PointHistory';
 import ProfileEdit from './pages/ProfileEdit';
 import NotificationList from './pages/NotificationList';
+import CustomerAnnouncements from './pages/CustomerAnnouncements';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('MAIN');
@@ -216,6 +217,8 @@ const App: React.FC = () => {
           notifications={notifications.filter(n => n.customerId === currentUser?.id)}
           setNotifications={handleSetNotifications}
         />;
+      case 'CUSTOMER_ANNOUNCEMENTS':
+        return <CustomerAnnouncements setView={setView} />;
       default:
         return <MainScreen setView={setView} />;
     }
