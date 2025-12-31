@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { ViewState, Customer, PointHistory, Notification, Announcement } from './types';
 import { initialCustomers, initialPointHistory, initialNotifications } from './mockData';
-import { api, isApiAvailable } from './api/client';
+import { api, isApiAvailable, toCustomer, toNotification, toAnnouncement } from './api/client';
+import { supabase } from './api/supabase';
 
 // Pages
 import MainScreen from './pages/Main';
@@ -75,6 +76,95 @@ const App: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  // Supabase Realtime 구독 - 실시간 데이터 동기화
+  useEffect(() => {
+    if (isLoading || !isApiAvailable()) return;
+
+    // customers 테이블 구독
+    const customersChannel = supabase
+      .channel('customers-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'customers' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setCustomers(prev => [toCustomer(payload.new), ...prev]);
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = toCustomer(payload.new);
+            setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
+            if (currentUser?.id === updated.id) setCurrentUser(updated);
+          } else if (payload.eventType === 'DELETE') {
+            setCustomers(prev => prev.filter(c => c.id !== (payload.old as any).id));
+          }
+        }
+      ).subscribe();
+
+    // notifications 테이블 구독
+    const notificationsChannel = supabase
+      .channel('notifications-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setNotifications(prev => [toNotification(payload.new), ...prev]);
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = toNotification(payload.new);
+            setNotifications(prev => prev.map(n => n.id === updated.id ? updated : n));
+          } else if (payload.eventType === 'DELETE') {
+            setNotifications(prev => prev.filter(n => n.id !== (payload.old as any).id));
+          }
+        }
+      ).subscribe();
+
+    // announcements 테이블 구독
+    const announcementsChannel = supabase
+      .channel('announcements-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'announcements' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newAnn = toAnnouncement(payload.new);
+            if (newAnn.isActive) setAnnouncements(prev => [newAnn, ...prev]);
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = toAnnouncement(payload.new);
+            setAnnouncements(prev => {
+              if (!updated.isActive) return prev.filter(a => a.id !== updated.id);
+              const exists = prev.some(a => a.id === updated.id);
+              if (!exists) return [updated, ...prev];
+              return prev.map(a => a.id === updated.id ? updated : a);
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setAnnouncements(prev => prev.filter(a => a.id !== (payload.old as any).id));
+          }
+        }
+      ).subscribe();
+
+    // point_history 테이블 구독
+    const pointHistoryChannel = supabase
+      .channel('point-history-changes')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'point_history' },
+        (payload) => {
+          const newHistory = {
+            id: payload.new.id,
+            customerId: payload.new.customer_id,
+            points: payload.new.points,
+            type: payload.new.type as 'earn' | 'use' | 'adjust',
+            reason: payload.new.reason || '',
+            createdAt: payload.new.created_at,
+          };
+          setPointHistory(prev => [newHistory, ...prev]);
+        }
+      ).subscribe();
+
+    // Cleanup: 컴포넌트 언마운트 시 구독 해제
+    return () => {
+      supabase.removeChannel(customersChannel);
+      supabase.removeChannel(notificationsChannel);
+      supabase.removeChannel(announcementsChannel);
+      supabase.removeChannel(pointHistoryChannel);
+    };
+  }, [isLoading, currentUser?.id]);
 
   const handleLogout = () => {
     setCurrentUser(null);

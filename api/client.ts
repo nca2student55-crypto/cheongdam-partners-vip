@@ -6,7 +6,7 @@ import { Customer, PointHistory, Notification, Admin, UserStatus, Announcement, 
 // ===== 헬퍼 함수: DB ↔ Frontend 변환 =====
 
 // DB row → Customer
-function toCustomer(row: any): Customer {
+export function toCustomer(row: any): Customer {
   let status: UserStatus;
   switch (row.status) {
     case 'active':
@@ -76,7 +76,7 @@ function toPointHistory(row: any): PointHistory {
 }
 
 // DB row → Notification
-function toNotification(row: any): Notification {
+export function toNotification(row: any): Notification {
   return {
     id: row.id,
     customerId: row.customer_id,
@@ -100,7 +100,7 @@ function toAdmin(row: any): Admin {
 }
 
 // DB row → Announcement
-function toAnnouncement(row: any): Announcement {
+export function toAnnouncement(row: any): Announcement {
   return {
     id: row.id,
     title: row.title,
@@ -127,7 +127,7 @@ function toInquiry(row: any): Inquiry {
 }
 
 // DB row → AdminNotification
-function toAdminNotification(row: any): AdminNotification {
+export function toAdminNotification(row: any): AdminNotification {
   return {
     id: row.id,
     type: row.type,

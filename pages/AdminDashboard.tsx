@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ViewState, Customer, UserStatus, Announcement, AdminNotification } from '../types';
 import { Button, Input, Card, AlertModal, AlertModalState, initialAlertState } from '../components/UI';
 import { api } from '../api/client';
+import { supabase } from '../api/supabase';
 
 interface Props {
   setView: (v: ViewState) => void;
@@ -92,6 +93,74 @@ const AdminDashboard: React.FC<Props> = ({
     loadPendingCustomers();
     loadAnnouncements();
     loadAdminNotifications();
+  }, []);
+
+  // Supabase Realtime 구독 - 관리자 알림 및 고객 변경 실시간 동기화
+  useEffect(() => {
+    // admin_notifications 테이블 구독
+    const adminNotifChannel = supabase
+      .channel('admin-notifications-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'admin_notifications' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newNotif: AdminNotification = {
+              id: payload.new.id,
+              type: payload.new.type,
+              referenceType: payload.new.reference_type,
+              referenceId: payload.new.reference_id,
+              title: payload.new.title,
+              content: payload.new.content,
+              isRead: payload.new.is_read,
+              createdAt: payload.new.created_at,
+            };
+            setAdminNotifications(prev => [newNotif, ...prev]);
+            if (!newNotif.isRead) setUnreadAlertCount(prev => prev + 1);
+          } else if (payload.eventType === 'UPDATE') {
+            setAdminNotifications(prev =>
+              prev.map(n => n.id === payload.new.id
+                ? { ...n, isRead: payload.new.is_read }
+                : n
+              )
+            );
+            if (payload.new.is_read && !payload.old?.is_read) {
+              setUnreadAlertCount(prev => Math.max(0, prev - 1));
+            }
+          } else if (payload.eventType === 'DELETE') {
+            setAdminNotifications(prev => prev.filter(n => n.id !== (payload.old as any).id));
+          }
+        }
+      ).subscribe();
+
+    // customers 테이블 구독 - pending 고객 실시간 갱신
+    const customersChannel = supabase
+      .channel('admin-customers-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'customers' },
+        (payload) => {
+          if (payload.eventType === 'INSERT' && payload.new.status === 'pending') {
+            loadPendingCustomers();
+          } else if (payload.eventType === 'UPDATE') {
+            // 상태 변경 시 pending 목록 갱신
+            loadPendingCustomers();
+          }
+        }
+      ).subscribe();
+
+    // announcements 테이블 구독
+    const announcementsChannel = supabase
+      .channel('admin-announcements-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'announcements' },
+        () => loadAnnouncements()
+      ).subscribe();
+
+    // Cleanup
+    return () => {
+      supabase.removeChannel(adminNotifChannel);
+      supabase.removeChannel(customersChannel);
+      supabase.removeChannel(announcementsChannel);
+    };
   }, []);
 
   const loadPendingCustomers = async () => {
