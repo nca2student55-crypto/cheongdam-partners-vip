@@ -71,3 +71,39 @@ export type ViewState =
 
 // 회원가입 단계
 export type SignupStep = 'TERMS' | 'FORM';
+
+// 문의 타입
+export type InquiryType = 'profile_change' | 'password_reset';
+export type InquiryStatus = 'pending' | 'resolved';
+
+export interface InquiryContent {
+  field?: 'name' | 'phone';  // profile_change용
+  currentValue?: string;
+  name?: string;             // password_reset용
+  phone?: string;
+}
+
+export interface Inquiry {
+  id: string;
+  customerId: string | null;
+  type: InquiryType;
+  content: InquiryContent;
+  status: InquiryStatus;
+  adminNote?: string;
+  resolvedAt?: string;
+  createdAt: string;
+}
+
+// 관리자 알림 타입
+export type AdminNotificationType = 'new_signup' | 'inquiry' | 'withdrawal';
+
+export interface AdminNotification {
+  id: string;
+  type: AdminNotificationType;
+  referenceType: 'customer' | 'inquiry';
+  referenceId: string;
+  title: string;
+  content: string;
+  isRead: boolean;
+  createdAt: string;
+}

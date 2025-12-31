@@ -1,30 +1,36 @@
 
 import React, { useState, useEffect } from 'react';
-import { ViewState, Customer, UserStatus, Announcement } from '../types';
-import { Button, Input, Card } from '../components/UI';
+import { ViewState, Customer, UserStatus, Announcement, AdminNotification } from '../types';
+import { Button, Input, Card, AlertModal, AlertModalState, initialAlertState } from '../components/UI';
 import { api } from '../api/client';
 
 interface Props {
   setView: (v: ViewState) => void;
   customers: Customer[];
   onAddPoints: (ids: string[], amount: number) => void;
+  onDeductPoints: (ids: string[], amount: number, reason: string) => Promise<void>;
   onUpdateCustomer: (c: Customer) => void;
   onDeleteCustomer: (id: string) => void;
   handleLogout: () => void;
 }
 
-const AdminDashboard: React.FC<Props> = ({ 
-  setView, 
-  customers, 
-  onAddPoints, 
-  onUpdateCustomer, 
+const AdminDashboard: React.FC<Props> = ({
+  setView,
+  customers,
+  onAddPoints,
+  onDeductPoints,
+  onUpdateCustomer,
   onDeleteCustomer,
-  handleLogout 
+  handleLogout
 }) => {
-  const [activeTab, setActiveTab] = useState<'pending' | 'customers' | 'messages' | 'announcements'>('customers');
+  const [activeTab, setActiveTab] = useState<'pending' | 'customers' | 'messages' | 'announcements' | 'alerts'>('customers');
   const [pendingCustomers, setPendingCustomers] = useState<Customer[]>([]);
   const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
   const [isApproving, setIsApproving] = useState(false);
+
+  // 관리자 알림 상태
+  const [adminNotifications, setAdminNotifications] = useState<AdminNotification[]>([]);
+  const [unreadAlertCount, setUnreadAlertCount] = useState(0);
 
   const [search, setSearch] = useState('');
   const [pointInput, setPointInput] = useState('');
@@ -35,6 +41,14 @@ const AdminDashboard: React.FC<Props> = ({
     company: true
   });
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [editModalTab, setEditModalTab] = useState<'info' | 'points' | 'account'>('info');
+
+  // 확인 모달 상태
+  const [confirmModal, setConfirmModal] = useState<{
+    type: 'withdraw' | 'restore' | 'delete' | null;
+    isOpen: boolean;
+  }>({ type: null, isOpen: false });
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
   // 포인트 조정 상태
   const [pointAdjustMode, setPointAdjustMode] = useState<'earn' | 'deduct'>('earn');
@@ -61,10 +75,23 @@ const AdminDashboard: React.FC<Props> = ({
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false);
 
-  // 대기 고객 및 공지사항 로드
+  // AlertModal 상태
+  const [alertModal, setAlertModal] = useState<AlertModalState>(initialAlertState);
+
+  // Alert 표시 헬퍼 함수
+  const showAlert = (type: AlertModalState['type'], title: string, message: string) => {
+    setAlertModal({ isOpen: true, type, title, message });
+  };
+
+  const closeAlert = () => {
+    setAlertModal(initialAlertState);
+  };
+
+  // 대기 고객, 공지사항, 알림 로드
   useEffect(() => {
     loadPendingCustomers();
     loadAnnouncements();
+    loadAdminNotifications();
   }, []);
 
   const loadPendingCustomers = async () => {
@@ -82,6 +109,57 @@ const AdminDashboard: React.FC<Props> = ({
       setAnnouncements(data);
     } catch (error) {
       console.error('공지사항 로드 실패:', error);
+    }
+  };
+
+  const loadAdminNotifications = async () => {
+    try {
+      const [notifications, unreadCount] = await Promise.all([
+        api.getAdminNotifications(),
+        api.getUnreadAdminNotificationCount()
+      ]);
+      setAdminNotifications(notifications);
+      setUnreadAlertCount(unreadCount);
+    } catch (error) {
+      console.error('관리자 알림 로드 실패:', error);
+    }
+  };
+
+  const handleMarkNotificationAsRead = async (notificationId: string) => {
+    try {
+      await api.markAdminNotificationAsRead(notificationId);
+      setAdminNotifications(prev => prev.map(n =>
+        n.id === notificationId ? { ...n, isRead: true } : n
+      ));
+      setUnreadAlertCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('알림 읽음 처리 실패:', error);
+    }
+  };
+
+  const handleMarkAllNotificationsAsRead = async () => {
+    try {
+      await api.markAllAdminNotificationsAsRead();
+      setAdminNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      setUnreadAlertCount(0);
+      showAlert('success', '완료', '모든 알림을 읽음 처리했습니다.');
+    } catch (error) {
+      console.error('전체 읽음 처리 실패:', error);
+      showAlert('error', '실패', '읽음 처리에 실패했습니다.');
+    }
+  };
+
+  // 알림 타입별 스타일
+  const getNotificationBadge = (type: AdminNotification['type']) => {
+    switch (type) {
+      case 'new_signup':
+        return { bg: 'bg-green-100', text: 'text-green-700', label: '신규가입' };
+      case 'inquiry':
+        return { bg: 'bg-blue-100', text: 'text-blue-700', label: '문의' };
+      case 'withdrawal':
+        return { bg: 'bg-red-100', text: 'text-red-700', label: '탈퇴' };
+      default:
+        return { bg: 'bg-gray-100', text: 'text-gray-700', label: '알림' };
     }
   };
 
@@ -109,10 +187,10 @@ const AdminDashboard: React.FC<Props> = ({
     try {
       await api.approveCustomer(customerId);
       setPendingCustomers(prev => prev.filter(c => c.id !== customerId));
-      alert('승인이 완료되었습니다.');
+      showAlert('success', '승인 완료', '승인이 완료되었습니다.');
     } catch (error) {
       console.error('승인 실패:', error);
-      alert('승인에 실패했습니다.');
+      showAlert('error', '승인 실패', '승인에 실패했습니다.');
     } finally {
       setIsApproving(false);
     }
@@ -120,7 +198,7 @@ const AdminDashboard: React.FC<Props> = ({
 
   const handleBulkApprove = async () => {
     if (selectedPendingIds.length === 0) {
-      alert('승인할 고객을 선택해주세요.');
+      showAlert('warning', '선택 필요', '승인할 고객을 선택해주세요.');
       return;
     }
 
@@ -129,10 +207,10 @@ const AdminDashboard: React.FC<Props> = ({
       await api.approveCustomers(selectedPendingIds);
       setPendingCustomers(prev => prev.filter(c => !selectedPendingIds.includes(c.id)));
       setSelectedPendingIds([]);
-      alert(`${selectedPendingIds.length}명의 고객이 승인되었습니다.`);
+      showAlert('success', '일괄 승인 완료', `${selectedPendingIds.length}명의 고객이 승인되었습니다.`);
     } catch (error) {
       console.error('일괄 승인 실패:', error);
-      alert('일괄 승인에 실패했습니다.');
+      showAlert('error', '일괄 승인 실패', '일괄 승인에 실패했습니다.');
     } finally {
       setIsApproving(false);
     }
@@ -150,12 +228,12 @@ const AdminDashboard: React.FC<Props> = ({
 
     const amount = parseInt(pointAdjustAmount);
     if (isNaN(amount) || amount <= 0) {
-      alert('올바른 포인트를 입력해주세요.');
+      showAlert('warning', '입력 오류', '올바른 포인트를 입력해주세요.');
       return;
     }
 
     if (pointAdjustMode === 'deduct' && !pointAdjustReason.trim()) {
-      alert('차감 사유를 입력해주세요.');
+      showAlert('warning', '입력 필요', '차감 사유를 입력해주세요.');
       return;
     }
 
@@ -168,26 +246,23 @@ const AdminDashboard: React.FC<Props> = ({
           ...editingCustomer,
           totalPoints: editingCustomer.totalPoints + amount
         });
-        alert(`${amount.toLocaleString()} 포인트가 적립되었습니다.`);
+        showAlert('success', '포인트 적립', `${amount.toLocaleString()} 포인트가 적립되었습니다.`);
       } else {
-        // 차감
-        const result = await api.deductPoints([editingCustomer.id], amount, pointAdjustReason);
-        if (result.customers.length > 0) {
-          const updatedCustomer = result.customers[0];
-          setEditingCustomer({
-            ...editingCustomer,
-            totalPoints: updatedCustomer.totalPoints
-          });
-          onUpdateCustomer(updatedCustomer);
-          alert(`${amount.toLocaleString()} 포인트가 차감되었습니다.`);
-        }
+        // 차감 - App.tsx의 핸들러 사용하여 상태 동기화
+        await onDeductPoints([editingCustomer.id], amount, pointAdjustReason);
+        const newPoints = Math.max(0, editingCustomer.totalPoints - amount);
+        setEditingCustomer({
+          ...editingCustomer,
+          totalPoints: newPoints
+        });
+        showAlert('success', '포인트 차감', `${amount.toLocaleString()} 포인트가 차감되었습니다.`);
       }
       // 입력 초기화
       setPointAdjustAmount('');
       setPointAdjustReason('');
     } catch (error) {
       console.error('포인트 조정 실패:', error);
-      alert('포인트 조정에 실패했습니다.');
+      showAlert('error', '조정 실패', '포인트 조정에 실패했습니다.');
     } finally {
       setIsAdjusting(false);
     }
@@ -196,12 +271,12 @@ const AdminDashboard: React.FC<Props> = ({
   // 메시지 발송 핸들러
   const handleSendMessage = async () => {
     if (!messageTitle.trim() || !messageContent.trim()) {
-      alert('제목과 내용을 입력해주세요.');
+      showAlert('warning', '입력 필요', '제목과 내용을 입력해주세요.');
       return;
     }
 
     if (messageTarget === 'selected' && selectedMessageIds.length === 0) {
-      alert('메시지를 보낼 고객을 선택해주세요.');
+      showAlert('warning', '선택 필요', '메시지를 보낼 고객을 선택해주세요.');
       return;
     }
 
@@ -214,13 +289,13 @@ const AdminDashboard: React.FC<Props> = ({
         result = await api.sendMessage(selectedMessageIds, messageTitle, messageContent);
       }
 
-      alert(`${result.successCount}명에게 메시지가 발송되었습니다.`);
+      showAlert('success', '발송 완료', `${result.successCount}명에게 메시지가 발송되었습니다.`);
       setMessageTitle('');
       setMessageContent('');
       setSelectedMessageIds([]);
     } catch (error) {
       console.error('메시지 발송 실패:', error);
-      alert('메시지 발송에 실패했습니다.');
+      showAlert('error', '발송 실패', '메시지 발송에 실패했습니다.');
     } finally {
       setIsSendingMessage(false);
     }
@@ -235,7 +310,7 @@ const AdminDashboard: React.FC<Props> = ({
   // 공지사항 핸들러
   const handleSaveAnnouncement = async () => {
     if (!newAnnouncement.title.trim() || !newAnnouncement.content.trim()) {
-      alert('제목과 내용을 입력해주세요.');
+      showAlert('warning', '입력 필요', '제목과 내용을 입력해주세요.');
       return;
     }
 
@@ -251,7 +326,7 @@ const AdminDashboard: React.FC<Props> = ({
           expiresAt: newAnnouncement.expiresAt || undefined,
         });
         setAnnouncements(prev => prev.map(a => a.id === updated.id ? updated : a));
-        alert('공지가 수정되었습니다.');
+        showAlert('success', '수정 완료', '공지가 수정되었습니다.');
       } else {
         // 신규 생성
         const created = await api.createAnnouncement({
@@ -262,28 +337,37 @@ const AdminDashboard: React.FC<Props> = ({
           expiresAt: newAnnouncement.expiresAt || undefined,
         });
         setAnnouncements(prev => [created, ...prev]);
-        alert('공지가 등록되었습니다.');
+        showAlert('success', '등록 완료', '공지가 등록되었습니다.');
       }
       closeAnnouncementModal();
     } catch (error) {
       console.error('공지 저장 실패:', error);
-      alert('공지 저장에 실패했습니다.');
+      showAlert('error', '저장 실패', '공지 저장에 실패했습니다.');
     } finally {
       setIsSavingAnnouncement(false);
     }
   };
 
+  // 공지 삭제 확인 상태
+  const [deleteAnnouncementId, setDeleteAnnouncementId] = useState<string | null>(null);
+
   const handleDeleteAnnouncement = async (id: string) => {
-    if (!confirm('정말 삭제하시겠습니까?')) return;
+    setDeleteAnnouncementId(id);
+  };
+
+  const confirmDeleteAnnouncement = async () => {
+    if (!deleteAnnouncementId) return;
 
     try {
-      await api.deleteAnnouncement(id);
-      setAnnouncements(prev => prev.filter(a => a.id !== id));
+      await api.deleteAnnouncement(deleteAnnouncementId);
+      setAnnouncements(prev => prev.filter(a => a.id !== deleteAnnouncementId));
       closeAnnouncementModal();
-      alert('공지가 삭제되었습니다.');
+      showAlert('success', '삭제 완료', '공지가 삭제되었습니다.');
     } catch (error) {
       console.error('공지 삭제 실패:', error);
-      alert('공지 삭제에 실패했습니다.');
+      showAlert('error', '삭제 실패', '공지 삭제에 실패했습니다.');
+    } finally {
+      setDeleteAnnouncementId(null);
     }
   };
 
@@ -313,21 +397,74 @@ const AdminDashboard: React.FC<Props> = ({
   const handlePointSubmit = () => {
     const amount = parseInt(pointInput);
     if (isNaN(amount) || amount <= 0) {
-      alert('올바른 포인트를 입력해주세요.');
+      showAlert('warning', '입력 오류', '올바른 포인트를 입력해주세요.');
       return;
     }
     if (selectedIds.length === 0) {
-      alert('고객을 선택해주세요.');
+      showAlert('warning', '선택 필요', '고객을 선택해주세요.');
       return;
     }
     onAddPoints(selectedIds, amount);
     setPointInput('');
     setSelectedIds([]);
-    alert('포인트 지급이 완료되었습니다.');
+    showAlert('success', '지급 완료', '포인트 지급이 완료되었습니다.');
   };
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  // 탈퇴 처리
+  const handleWithdraw = () => {
+    if (!editingCustomer) return;
+    const updated = {
+      ...editingCustomer,
+      status: UserStatus.WITHDRAWN,
+      withdrawnAt: new Date().toISOString()
+    };
+    onUpdateCustomer(updated);
+    setEditingCustomer(updated);
+    setConfirmModal({ type: null, isOpen: false });
+    showAlert('success', '탈퇴 처리', '탈퇴 처리가 완료되었습니다.');
+  };
+
+  // 탈퇴 복구
+  const handleRestore = () => {
+    if (!editingCustomer) return;
+    const updated = {
+      ...editingCustomer,
+      status: UserStatus.ACTIVE,
+      withdrawnAt: undefined
+    };
+    onUpdateCustomer(updated);
+    setEditingCustomer(updated);
+    setConfirmModal({ type: null, isOpen: false });
+    showAlert('success', '탈퇴 복구', '탈퇴가 복구되었습니다.');
+  };
+
+  // 영구 삭제
+  const handlePermanentDelete = () => {
+    if (!editingCustomer) return;
+    if (deleteConfirmName !== editingCustomer.name) {
+      showAlert('error', '이름 불일치', '고객 이름이 일치하지 않습니다.');
+      return;
+    }
+    onDeleteCustomer(editingCustomer.id);
+    setEditingCustomer(null);
+    setConfirmModal({ type: null, isOpen: false });
+    setDeleteConfirmName('');
+    showAlert('success', '삭제 완료', '고객이 영구 삭제되었습니다.');
+  };
+
+  // 모달 닫기 시 초기화
+  const closeEditModal = () => {
+    setEditingCustomer(null);
+    setEditModalTab('info');
+    setPointAdjustAmount('');
+    setPointAdjustReason('');
+    setPointAdjustMode('earn');
+    setConfirmModal({ type: null, isOpen: false });
+    setDeleteConfirmName('');
   };
 
   return (
@@ -389,6 +526,21 @@ const AdminDashboard: React.FC<Props> = ({
           onClick={() => setActiveTab('announcements')}
         >
           공지
+        </button>
+        <button
+          className={`flex-1 py-3 text-sm font-medium text-center transition-colors relative ${
+            activeTab === 'alerts'
+              ? 'text-navy-800 border-b-2 border-navy-800'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+          onClick={() => setActiveTab('alerts')}
+        >
+          알림
+          {unreadAlertCount > 0 && (
+            <span className="ml-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+              {unreadAlertCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -727,6 +879,98 @@ const AdminDashboard: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Alerts Tab Content */}
+      {activeTab === 'alerts' && (
+        <div className="flex-1 flex flex-col">
+          {/* Header */}
+          <div className="p-4 bg-gray-100 flex items-center justify-between sticky top-[104px] z-10 shadow-sm">
+            <span className="text-sm text-gray-600">
+              전체 {adminNotifications.length}건 (읽지 않음 {unreadAlertCount}건)
+            </span>
+            <Button
+              variant="secondary"
+              className="text-xs py-1.5 px-3"
+              onClick={handleMarkAllNotificationsAsRead}
+              disabled={unreadAlertCount === 0}
+            >
+              모두 읽음
+            </Button>
+          </div>
+
+          {/* Notification List */}
+          <div className="flex-1 overflow-y-auto bg-white">
+            {adminNotifications.length === 0 ? (
+              <div className="p-20 text-center text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-4 text-gray-300">
+                  <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                  <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+                </svg>
+                알림이 없습니다.
+              </div>
+            ) : (
+              <div className="divide-y">
+                {adminNotifications.map(notification => {
+                  const badge = getNotificationBadge(notification.type);
+                  return (
+                    <div
+                      key={notification.id}
+                      className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${
+                        !notification.isRead ? 'bg-blue-50' : ''
+                      }`}
+                      onClick={() => {
+                        if (!notification.isRead) {
+                          handleMarkNotificationAsRead(notification.id);
+                        }
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* 읽지 않음 표시 */}
+                        <div className="pt-1">
+                          {!notification.isRead && (
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                          )}
+                          {notification.isRead && (
+                            <div className="w-2 h-2"></div>
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          {/* 배지 및 제목 */}
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-xs px-2 py-0.5 rounded ${badge.bg} ${badge.text}`}>
+                              {badge.label}
+                            </span>
+                            <span className="font-medium text-navy-800 truncate">
+                              {notification.title}
+                            </span>
+                          </div>
+
+                          {/* 내용 */}
+                          <p className="text-sm text-gray-600 line-clamp-2">
+                            {notification.content}
+                          </p>
+
+                          {/* 날짜 */}
+                          <p className="text-xs text-gray-400 mt-1">
+                            {new Date(notification.createdAt).toLocaleString('ko-KR', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Announcement Modal */}
       {isAnnouncementModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6">
@@ -795,116 +1039,372 @@ const AdminDashboard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Edit Modal */}
+      {/* Edit Modal - Tab Based */}
       {editingCustomer && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6">
-          <Card className="w-full max-w-sm p-6 space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold text-lg text-navy-800">고객 정보 수정</h3>
-              <div className="text-navy-800 font-bold bg-navy-50 px-2 py-1 rounded text-xs">
-                {editingCustomer.totalPoints.toLocaleString()} P
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="p-4 border-b flex justify-between items-center bg-navy-800 text-white rounded-t-xl">
+              <div>
+                <h3 className="font-bold text-lg">{editingCustomer.name}</h3>
+                <p className="text-sm opacity-80">{editingCustomer.phone}</p>
               </div>
-            </div>
-            <div className="space-y-3">
-              <Input label="이름" value={editingCustomer.name} onChange={e => setEditingCustomer({...editingCustomer, name: e.target.value})} />
-              <Input label="전화번호" value={editingCustomer.phone} onChange={e => setEditingCustomer({...editingCustomer, phone: e.target.value})} />
-              <Input label="업체명" value={editingCustomer.company} onChange={e => setEditingCustomer({...editingCustomer, company: e.target.value})} />
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={editingCustomer.status === UserStatus.WITHDRAWN}
-                  onChange={e => setEditingCustomer({...editingCustomer, status: e.target.checked ? UserStatus.WITHDRAWN : UserStatus.ACTIVE})}
-                />
-                <span className="text-sm">탈퇴 처리</span>
+              <div className="text-right">
+                <div className="text-gold-400 font-bold text-lg">
+                  {editingCustomer.totalPoints.toLocaleString()} P
+                </div>
+                {editingCustomer.status === UserStatus.WITHDRAWN && (
+                  <span className="text-xs bg-red-500 px-2 py-0.5 rounded">탈퇴됨</span>
+                )}
               </div>
             </div>
 
-            {/* 포인트 조정 섹션 */}
-            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-              <div className="text-sm font-medium text-navy-800">포인트 조정</div>
-              <div className="flex gap-2">
-                <button
-                  className={`flex-1 py-2 text-sm rounded-lg font-medium transition-colors ${
-                    pointAdjustMode === 'earn'
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-200 text-gray-600'
-                  }`}
-                  onClick={() => setPointAdjustMode('earn')}
-                >
-                  적립
-                </button>
-                <button
-                  className={`flex-1 py-2 text-sm rounded-lg font-medium transition-colors ${
-                    pointAdjustMode === 'deduct'
-                      ? 'bg-red-500 text-white'
-                      : 'bg-gray-200 text-gray-600'
-                  }`}
-                  onClick={() => setPointAdjustMode('deduct')}
-                >
-                  차감
-                </button>
-              </div>
-              <input
-                type="number"
-                className="w-full px-3 py-2 border rounded-lg text-sm"
-                placeholder="금액 입력"
-                value={pointAdjustAmount}
-                onChange={e => setPointAdjustAmount(e.target.value)}
-              />
-              {pointAdjustMode === 'deduct' && (
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border rounded-lg text-sm"
-                  placeholder="차감 사유 (필수)"
-                  value={pointAdjustReason}
-                  onChange={e => setPointAdjustReason(e.target.value)}
-                />
-              )}
+            {/* Tab Navigation */}
+            <div className="flex border-b bg-gray-50">
               <button
-                className="w-full py-2 bg-navy-800 text-white text-sm rounded-lg hover:bg-navy-900 disabled:opacity-50"
-                onClick={handlePointAdjust}
-                disabled={isAdjusting}
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  editModalTab === 'info'
+                    ? 'bg-white text-navy-800 border-b-2 border-navy-800'
+                    : 'text-gray-500'
+                }`}
+                onClick={() => setEditModalTab('info')}
               >
-                {isAdjusting ? '처리 중...' : '포인트 적용'}
+                기본정보
+              </button>
+              <button
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  editModalTab === 'points'
+                    ? 'bg-white text-navy-800 border-b-2 border-navy-800'
+                    : 'text-gray-500'
+                }`}
+                onClick={() => setEditModalTab('points')}
+              >
+                포인트
+              </button>
+              <button
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  editModalTab === 'account'
+                    ? 'bg-white text-navy-800 border-b-2 border-navy-800'
+                    : 'text-gray-500'
+                }`}
+                onClick={() => setEditModalTab('account')}
+              >
+                계정관리
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              <Button variant="danger" className="text-sm" onClick={() => {
-                if (confirm('정말 삭제하시겠습니까? 데이터가 영구 삭제됩니다.')) {
-                  onDeleteCustomer(editingCustomer.id);
-                  setEditingCustomer(null);
-                }
-              }}>삭제</Button>
-              <Button variant="primary" className="text-sm" onClick={() => {
-                onUpdateCustomer(editingCustomer);
-                setEditingCustomer(null);
-              }}>저장</Button>
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* 기본정보 탭 */}
+              {editModalTab === 'info' && (
+                <div className="space-y-4">
+                  <Input
+                    label="이름"
+                    value={editingCustomer.name}
+                    onChange={e => setEditingCustomer({...editingCustomer, name: e.target.value})}
+                  />
+                  <Input
+                    label="전화번호"
+                    value={editingCustomer.phone}
+                    onChange={e => setEditingCustomer({...editingCustomer, phone: e.target.value})}
+                  />
+                  <Input
+                    label="업체명"
+                    value={editingCustomer.company}
+                    onChange={e => setEditingCustomer({...editingCustomer, company: e.target.value})}
+                  />
+                  <div className="flex gap-2 mt-6">
+                    <Button
+                      variant="primary"
+                      fullWidth
+                      onClick={() => {
+                        onUpdateCustomer(editingCustomer);
+                        showAlert('success', '저장 완료', '변경사항이 저장되었습니다.');
+                      }}
+                    >
+                      변경사항 저장
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* 포인트 탭 */}
+              {editModalTab === 'points' && (
+                <div className="space-y-4">
+                  <div className="text-center py-4 bg-navy-50 rounded-lg">
+                    <div className="text-sm text-gray-500">현재 보유 포인트</div>
+                    <div className="text-3xl font-bold text-navy-800">
+                      {editingCustomer.totalPoints.toLocaleString()} P
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      className={`flex-1 py-3 text-sm rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                        pointAdjustMode === 'earn'
+                          ? 'bg-green-500 text-white'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                      onClick={() => setPointAdjustMode('earn')}
+                    >
+                      <span className="text-lg">+</span> 적립
+                    </button>
+                    <button
+                      className={`flex-1 py-3 text-sm rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                        pointAdjustMode === 'deduct'
+                          ? 'bg-red-500 text-white'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                      onClick={() => setPointAdjustMode('deduct')}
+                    >
+                      <span className="text-lg">-</span> 차감
+                    </button>
+                  </div>
+
+                  <Input
+                    label="금액"
+                    type="number"
+                    placeholder="포인트 금액 입력"
+                    value={pointAdjustAmount}
+                    onChange={e => setPointAdjustAmount(e.target.value)}
+                  />
+
+                  {pointAdjustMode === 'deduct' && (
+                    <Input
+                      label="차감 사유"
+                      placeholder="차감 사유를 입력하세요 (필수)"
+                      value={pointAdjustReason}
+                      onChange={e => setPointAdjustReason(e.target.value)}
+                    />
+                  )}
+
+                  <Button
+                    fullWidth
+                    variant={pointAdjustMode === 'earn' ? 'primary' : 'danger'}
+                    onClick={handlePointAdjust}
+                    disabled={isAdjusting}
+                  >
+                    {isAdjusting ? '처리 중...' : pointAdjustMode === 'earn' ? '포인트 적립' : '포인트 차감'}
+                  </Button>
+                </div>
+              )}
+
+              {/* 계정관리 탭 */}
+              {editModalTab === 'account' && (
+                <div className="space-y-4">
+                  {/* 비밀번호 초기화 */}
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <div className="text-sm font-medium text-navy-800 mb-2">비밀번호 관리</div>
+                    <Button
+                      variant="secondary"
+                      fullWidth
+                      onClick={async () => {
+                        const newPassword = prompt('새 비밀번호를 입력하세요 (4자 이상):');
+                        if (newPassword && newPassword.length >= 4) {
+                          try {
+                            await api.resetCustomerPassword(editingCustomer.id, newPassword);
+                            showAlert('success', '초기화 완료', '비밀번호가 초기화되었습니다.');
+                          } catch (err) {
+                            showAlert('error', '초기화 실패', '비밀번호 초기화에 실패했습니다.');
+                          }
+                        } else if (newPassword) {
+                          showAlert('warning', '입력 오류', '비밀번호는 4자 이상이어야 합니다.');
+                        }
+                      }}
+                    >
+                      비밀번호 초기화
+                    </Button>
+                  </div>
+
+                  {/* 탈퇴/복구 */}
+                  <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+                    <div className="text-sm font-medium text-orange-800 mb-2">회원 상태 관리</div>
+                    {editingCustomer.status === UserStatus.WITHDRAWN ? (
+                      <Button
+                        fullWidth
+                        className="bg-green-500 hover:bg-green-600 text-white"
+                        onClick={() => setConfirmModal({ type: 'restore', isOpen: true })}
+                      >
+                        탈퇴 복구
+                      </Button>
+                    ) : (
+                      <Button
+                        fullWidth
+                        className="bg-orange-500 hover:bg-orange-600 text-white"
+                        onClick={() => setConfirmModal({ type: 'withdraw', isOpen: true })}
+                      >
+                        탈퇴 처리
+                      </Button>
+                    )}
+                    <p className="text-xs text-orange-600 mt-2">
+                      {editingCustomer.status === UserStatus.WITHDRAWN
+                        ? '탈퇴 복구 시 다시 로그인할 수 있습니다.'
+                        : '탈퇴 처리 시 로그인이 차단되지만 데이터는 유지됩니다.'}
+                    </p>
+                  </div>
+
+                  {/* 영구 삭제 */}
+                  <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      <span className="text-sm font-medium text-red-800">위험 영역</span>
+                    </div>
+                    <Button
+                      variant="danger"
+                      fullWidth
+                      onClick={() => setConfirmModal({ type: 'delete', isOpen: true })}
+                    >
+                      영구 삭제
+                    </Button>
+                    <p className="text-xs text-red-600 mt-2">
+                      영구 삭제 시 모든 데이터가 복구 불가능하게 삭제됩니다.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
-            <Button
-              variant="secondary"
-              fullWidth
-              className="text-sm"
-              onClick={async () => {
-                const newPassword = prompt('새 비밀번호를 입력하세요 (4자 이상):');
-                if (newPassword && newPassword.length >= 4) {
-                  try {
-                    await api.resetCustomerPassword(editingCustomer.id, newPassword);
-                    alert('비밀번호가 초기화되었습니다.');
-                  } catch (err) {
-                    alert('비밀번호 초기화에 실패했습니다.');
-                  }
-                } else if (newPassword) {
-                  alert('비밀번호는 4자 이상이어야 합니다.');
-                }
-              }}
-            >
-              비밀번호 초기화
-            </Button>
-            <Button variant="ghost" fullWidth onClick={() => setEditingCustomer(null)}>닫기</Button>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t">
+              <Button variant="ghost" fullWidth onClick={closeEditModal}>
+                닫기
+              </Button>
+            </div>
           </Card>
         </div>
       )}
+
+      {/* Confirm Modal */}
+      {confirmModal.isOpen && editingCustomer && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+          <Card className="w-full max-w-sm p-6 space-y-4">
+            {/* 탈퇴 처리 확인 */}
+            {confirmModal.type === 'withdraw' && (
+              <>
+                <div className="text-center">
+                  <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-800">탈퇴 처리</h3>
+                  <p className="text-sm text-gray-500 mt-2">
+                    <strong>{editingCustomer.name}</strong> 고객을 탈퇴 처리하시겠습니까?
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    탈퇴 시 로그인이 차단되지만 데이터는 유지됩니다.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="secondary" fullWidth onClick={() => setConfirmModal({ type: null, isOpen: false })}>
+                    취소
+                  </Button>
+                  <Button className="bg-orange-500 hover:bg-orange-600 text-white flex-1" onClick={handleWithdraw}>
+                    탈퇴 처리
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* 탈퇴 복구 확인 */}
+            {confirmModal.type === 'restore' && (
+              <>
+                <div className="text-center">
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-800">탈퇴 복구</h3>
+                  <p className="text-sm text-gray-500 mt-2">
+                    <strong>{editingCustomer.name}</strong> 고객의 탈퇴를 복구하시겠습니까?
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    복구 시 다시 로그인할 수 있습니다.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="secondary" fullWidth onClick={() => setConfirmModal({ type: null, isOpen: false })}>
+                    취소
+                  </Button>
+                  <Button className="bg-green-500 hover:bg-green-600 text-white flex-1" onClick={handleRestore}>
+                    복구하기
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* 영구 삭제 확인 */}
+            {confirmModal.type === 'delete' && (
+              <>
+                <div className="text-center">
+                  <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  </div>
+                  <h3 className="text-lg font-bold text-red-600">영구 삭제</h3>
+                  <p className="text-sm text-gray-500 mt-2">
+                    이 작업은 <strong>되돌릴 수 없습니다.</strong>
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    삭제를 확인하려면 고객 이름을 입력하세요.
+                  </p>
+                </div>
+                <Input
+                  placeholder={`"${editingCustomer.name}" 입력`}
+                  value={deleteConfirmName}
+                  onChange={e => setDeleteConfirmName(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button variant="secondary" fullWidth onClick={() => {
+                    setConfirmModal({ type: null, isOpen: false });
+                    setDeleteConfirmName('');
+                  }}>
+                    취소
+                  </Button>
+                  <Button
+                    variant="danger"
+                    fullWidth
+                    onClick={handlePermanentDelete}
+                    disabled={deleteConfirmName !== editingCustomer.name}
+                  >
+                    영구 삭제
+                  </Button>
+                </div>
+              </>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* 공지 삭제 확인 모달 */}
+      {deleteAnnouncementId && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+          <Card className="w-full max-w-sm p-6 space-y-4">
+            <div className="text-center">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-gray-800">공지 삭제</h3>
+              <p className="text-sm text-gray-500 mt-2">정말 이 공지를 삭제하시겠습니까?</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="secondary" fullWidth onClick={() => setDeleteAnnouncementId(null)}>
+                취소
+              </Button>
+              <Button variant="danger" fullWidth onClick={confirmDeleteAnnouncement}>
+                삭제
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        onClose={closeAlert}
+      />
     </div>
   );
 };

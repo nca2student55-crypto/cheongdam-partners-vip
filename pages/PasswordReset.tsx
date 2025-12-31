@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { ViewState, Customer } from '../types';
-import { Button, Input } from '../components/UI';
+import { Button, Input, AlertModal, AlertModalState, initialAlertState } from '../components/UI';
 
 interface Props {
   setView: (v: ViewState) => void;
@@ -17,14 +17,25 @@ const PasswordReset: React.FC<Props> = ({ setView, customers, onUpdateCustomer }
   const [step, setStep] = useState(1); // 1: input phone, 2: input otp, 3: reset pw
   const [targetUser, setTargetUser] = useState<Customer | null>(null);
 
+  // AlertModal 상태
+  const [alertModal, setAlertModal] = useState<AlertModalState>(initialAlertState);
+
+  const showAlert = (type: AlertModalState['type'], title: string, message: string) => {
+    setAlertModal({ isOpen: true, type, title, message });
+  };
+
+  const closeAlert = () => {
+    setAlertModal(initialAlertState);
+  };
+
   const handleSendOtp = () => {
     const user = customers.find(c => c.phone.replace(/[^0-9]/g, '') === phone.replace(/[^0-9]/g, ''));
     if (user) {
       setTargetUser(user);
-      alert('인증번호(123456)가 발송되었습니다.');
+      showAlert('success', '발송 완료', '인증번호(123456)가 발송되었습니다.');
       setStep(2);
     } else {
-      alert('등록되지 않은 전화번호입니다.');
+      showAlert('error', '조회 실패', '등록되지 않은 전화번호입니다.');
     }
   };
 
@@ -32,23 +43,23 @@ const PasswordReset: React.FC<Props> = ({ setView, customers, onUpdateCustomer }
     if (otp === '123456') {
       setStep(3);
     } else {
-      alert('인증번호가 일치하지 않습니다.');
+      showAlert('error', '인증 실패', '인증번호가 일치하지 않습니다.');
     }
   };
 
   const handleResetPassword = () => {
     if (newPassword.length < 4) {
-      alert('비밀번호는 4자리 이상이어야 합니다.');
+      showAlert('warning', '입력 오류', '비밀번호는 4자리 이상이어야 합니다.');
       return;
     }
     if (newPassword !== confirmPassword) {
-      alert('비밀번호가 일치하지 않습니다.');
+      showAlert('error', '입력 오류', '비밀번호가 일치하지 않습니다.');
       return;
     }
     if (targetUser) {
       onUpdateCustomer({ ...targetUser, password: newPassword });
-      alert('비밀번호가 변경되었습니다.');
-      setView('CUSTOMER_LOGIN');
+      showAlert('success', '변경 완료', '비밀번호가 변경되었습니다.');
+      setTimeout(() => setView('CUSTOMER_LOGIN'), 1500);
     }
   };
 
@@ -81,6 +92,15 @@ const PasswordReset: React.FC<Props> = ({ setView, customers, onUpdateCustomer }
           <Button fullWidth onClick={handleResetPassword}>비밀번호 변경</Button>
         </div>
       )}
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        onClose={closeAlert}
+      />
     </div>
   );
 };

@@ -22,7 +22,7 @@ const MainScreen: React.FC<Props> = ({ setView }) => {
         <div className="w-24 h-24 bg-navy-800 rounded-2xl flex items-center justify-center mx-auto shadow-lg rotate-3">
           <span className="text-gold-400 text-4xl font-bold">VIP</span>
         </div>
-        <h1 className="text-3xl font-bold text-navy-800">청담 파트너 VIP</h1>
+        <h1 className="text-3xl font-bold text-navy-800">청담 파트너스 VIP</h1>
         <p className="text-gray-500">프리미엄 고객 관리 솔루션</p>
       </div>
 

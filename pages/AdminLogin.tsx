@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { ViewState } from '../types';
-import { Button, Input } from '../components/UI';
+import { Button, Input, AlertModal, AlertModalState, initialAlertState } from '../components/UI';
 import { api } from '../api/client';
 
 interface Props {
@@ -11,16 +11,25 @@ interface Props {
 
 const AdminLogin: React.FC<Props> = ({ setView, setIsAdmin }) => {
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // AlertModal 상태
+  const [alertModal, setAlertModal] = useState<AlertModalState>(initialAlertState);
+
+  const showAlert = (type: AlertModalState['type'], title: string, message: string) => {
+    setAlertModal({ isOpen: true, type, title, message });
+  };
+
+  const closeAlert = () => {
+    setAlertModal(initialAlertState);
+  };
 
   const handleLogin = async () => {
     if (!password) {
-      setError('비밀번호를 입력해주세요.');
+      showAlert('warning', '입력 필요', '비밀번호를 입력해주세요.');
       return;
     }
 
-    setError('');
     setIsLoading(true);
 
     try {
@@ -31,11 +40,11 @@ const AdminLogin: React.FC<Props> = ({ setView, setIsAdmin }) => {
         setIsAdmin(true);
         setView('ADMIN_DASHBOARD');
       } else {
-        setError('비밀번호가 일치하지 않습니다.');
+        showAlert('error', '로그인 실패', '비밀번호가 일치하지 않습니다.');
       }
     } catch (err) {
       console.error('관리자 로그인 실패:', err);
-      setError('로그인에 실패했습니다. 다시 시도해주세요.');
+      showAlert('error', '오류 발생', '로그인에 실패했습니다.\n다시 시도해주세요.');
     } finally {
       setIsLoading(false);
     }
@@ -60,11 +69,18 @@ const AdminLogin: React.FC<Props> = ({ setView, setIsAdmin }) => {
         onChange={(e) => setPassword(e.target.value)}
       />
 
-      {error && <p className="text-red-500 text-sm mt-4 mb-4">{error}</p>}
-
       <Button fullWidth onClick={handleLogin} disabled={isLoading} className="mt-6">
         {isLoading ? '로그인 중...' : '확인'}
       </Button>
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        onClose={closeAlert}
+      />
     </div>
   );
 };

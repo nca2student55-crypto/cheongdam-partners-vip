@@ -1,7 +1,7 @@
 // Supabase API 클라이언트
 
 import { supabase } from './supabase';
-import { Customer, PointHistory, Notification, Admin, UserStatus, Announcement } from '../types';
+import { Customer, PointHistory, Notification, Admin, UserStatus, Announcement, Inquiry, InquiryContent, AdminNotification, AdminNotificationType } from '../types';
 
 // ===== 헬퍼 함수: DB ↔ Frontend 변환 =====
 
@@ -109,6 +109,34 @@ function toAnnouncement(row: any): Announcement {
     isPinned: row.is_pinned,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
+  };
+}
+
+// DB row → Inquiry
+function toInquiry(row: any): Inquiry {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    type: row.type,
+    content: row.content,
+    status: row.status,
+    adminNote: row.admin_note,
+    resolvedAt: row.resolved_at,
+    createdAt: row.created_at,
+  };
+}
+
+// DB row → AdminNotification
+function toAdminNotification(row: any): AdminNotification {
+  return {
+    id: row.id,
+    type: row.type,
+    referenceType: row.reference_type,
+    referenceId: row.reference_id,
+    title: row.title,
+    content: row.content,
+    isRead: row.is_read,
+    createdAt: row.created_at,
   };
 }
 
@@ -631,6 +659,199 @@ export const api = {
       .eq('id', id);
 
     if (error) throw error;
+  },
+
+  // ===== Inquiries (고객 문의) =====
+
+  // 프로필 수정 문의 생성
+  async createProfileChangeInquiry(customerId: string, field: 'name' | 'phone', currentValue: string): Promise<Inquiry> {
+    const content: InquiryContent = { field, currentValue };
+
+    const { data, error } = await supabase
+      .from('inquiries')
+      .insert({
+        customer_id: customerId,
+        type: 'profile_change',
+        content,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const inquiry = toInquiry(data);
+
+    // 관리자 알림 자동 생성
+    const fieldLabel = field === 'name' ? '이름' : '전화번호';
+    await this.createAdminNotification(
+      'inquiry',
+      'inquiry',
+      inquiry.id,
+      `[정보 수정] ${fieldLabel} 변경 문의`,
+      `${fieldLabel} 수정 문의가 접수되었습니다. (현재: ${currentValue})`
+    );
+
+    return inquiry;
+  },
+
+  // 비밀번호 찾기 문의 생성
+  async createPasswordResetInquiry(name: string, phone: string): Promise<Inquiry> {
+    const content: InquiryContent = { name, phone };
+
+    // 해당 전화번호로 고객 조회
+    const customer = await this.getCustomerByPhone(phone);
+
+    const { data, error } = await supabase
+      .from('inquiries')
+      .insert({
+        customer_id: customer?.id || null,
+        type: 'password_reset',
+        content,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const inquiry = toInquiry(data);
+
+    // 관리자 알림 자동 생성
+    await this.createAdminNotification(
+      'inquiry',
+      'inquiry',
+      inquiry.id,
+      '[비밀번호 찾기] 문의',
+      `${name}(${phone}) 고객의 비밀번호 찾기 문의입니다.`
+    );
+
+    return inquiry;
+  },
+
+  // 문의 목록 조회 (관리자용)
+  async getInquiries(status?: string): Promise<Inquiry[]> {
+    let query = supabase
+      .from('inquiries')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map(toInquiry);
+  },
+
+  // 문의 상태 업데이트 (관리자용)
+  async resolveInquiry(inquiryId: string, adminNote?: string): Promise<Inquiry> {
+    const { data, error } = await supabase
+      .from('inquiries')
+      .update({
+        status: 'resolved',
+        resolved_at: new Date().toISOString(),
+        admin_note: adminNote,
+      })
+      .eq('id', inquiryId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return toInquiry(data);
+  },
+
+  // ===== Admin Notifications (관리자 알림) =====
+
+  // 관리자 알림 생성
+  async createAdminNotification(
+    type: AdminNotificationType,
+    referenceType: 'customer' | 'inquiry',
+    referenceId: string,
+    title: string,
+    content: string
+  ): Promise<AdminNotification> {
+    const { data, error } = await supabase
+      .from('admin_notifications')
+      .insert({
+        type,
+        reference_type: referenceType,
+        reference_id: referenceId,
+        title,
+        content,
+        is_read: false,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return toAdminNotification(data);
+  },
+
+  // 신규 가입 알림 생성
+  async createSignupNotification(customer: Customer): Promise<AdminNotification> {
+    return this.createAdminNotification(
+      'new_signup',
+      'customer',
+      customer.id,
+      '신규 가입 신청',
+      `${customer.name}(${customer.phone}) 고객이 가입을 신청했습니다.`
+    );
+  },
+
+  // 탈퇴 알림 생성
+  async createWithdrawalNotification(customer: Customer): Promise<AdminNotification> {
+    return this.createAdminNotification(
+      'withdrawal',
+      'customer',
+      customer.id,
+      '회원 탈퇴',
+      `${customer.name}(${customer.phone}) 고객이 탈퇴했습니다.`
+    );
+  },
+
+  // 관리자 알림 목록 조회
+  async getAdminNotifications(unreadOnly: boolean = false): Promise<AdminNotification[]> {
+    let query = supabase
+      .from('admin_notifications')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (unreadOnly) {
+      query = query.eq('is_read', false);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map(toAdminNotification);
+  },
+
+  // 읽지 않은 알림 수 조회
+  async getUnreadAdminNotificationCount(): Promise<number> {
+    const { count, error } = await supabase
+      .from('admin_notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_read', false);
+
+    if (error) throw error;
+    return count || 0;
+  },
+
+  // 알림 읽음 처리
+  async markAdminNotificationAsRead(notificationId: string): Promise<void> {
+    await supabase
+      .from('admin_notifications')
+      .update({ is_read: true })
+      .eq('id', notificationId);
+  },
+
+  // 모든 알림 읽음 처리
+  async markAllAdminNotificationsAsRead(): Promise<void> {
+    await supabase
+      .from('admin_notifications')
+      .update({ is_read: true })
+      .eq('is_read', false);
   },
 };
 

@@ -1,5 +1,5 @@
 {
-  "name": "청담 파트너 VIP",
+  "name": "청담 파트너스 VIP",
   "description": "고객 등록 현황 및 포인트 관리를 위한 프리미엄 VIP 매니지먼트 앱",
   "requestFramePermissions": [
     "geolocation"

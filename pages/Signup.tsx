@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ViewState, Customer, UserStatus, SignupStep } from '../types';
-import { Button, Input } from '../components/UI';
+import { Button, Input, AlertModal, AlertModalState, initialAlertState } from '../components/UI';
 import { api } from '../api/client';
 
 interface Props {
@@ -21,8 +21,18 @@ const Signup: React.FC<Props> = ({ setView, customers, setCustomers }) => {
     company: '',
     isIndividual: false
   });
-  const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // AlertModal 상태
+  const [alertModal, setAlertModal] = useState<AlertModalState>(initialAlertState);
+
+  const showAlert = (type: AlertModalState['type'], title: string, message: string) => {
+    setAlertModal({ isOpen: true, type, title, message });
+  };
+
+  const closeAlert = () => {
+    setAlertModal(initialAlertState);
+  };
 
   // 전화번호 정규화 (숫자만 추출 후 앞 0 제거)
   const normalizePhone = (phone: string | number): string => {
@@ -34,17 +44,17 @@ const Signup: React.FC<Props> = ({ setView, customers, setCustomers }) => {
     const { name, phone, password, confirmPassword } = formData;
 
     if (!name || !phone || !password || !confirmPassword) {
-      setError('모든 필수 항목을 입력해주세요.');
+      showAlert('warning', '입력 필요', '모든 필수 항목을 입력해주세요.');
       return;
     }
 
     if (password.length < 4) {
-      setError('비밀번호는 4자 이상이어야 합니다.');
+      showAlert('warning', '입력 오류', '비밀번호는 4자 이상이어야 합니다.');
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('비밀번호가 일치하지 않습니다.');
+      showAlert('error', '입력 오류', '비밀번호가 일치하지 않습니다.');
       return;
     }
 
@@ -53,11 +63,10 @@ const Signup: React.FC<Props> = ({ setView, customers, setCustomers }) => {
     const existingCustomer = customers.find(c => normalizePhone(c.phone) === normalizedInputPhone);
 
     if (existingCustomer) {
-      setError('이미 가입된 전화번호입니다. 로그인을 이용해주세요.');
+      showAlert('error', '중복 확인', '이미 가입된 전화번호입니다.\n로그인을 이용해주세요.');
       return;
     }
 
-    setError('');
     setIsLoading(true);
 
     try {
@@ -72,14 +81,22 @@ const Signup: React.FC<Props> = ({ setView, customers, setCustomers }) => {
         status: UserStatus.PENDING,
       });
 
+      // 관리자 알림 생성
+      try {
+        await api.createSignupNotification(newCustomer);
+      } catch (notifError) {
+        console.error('가입 알림 생성 실패:', notifError);
+        // 알림 생성 실패해도 가입은 완료 처리
+      }
+
       setCustomers([...customers, newCustomer]);
       setSignupComplete(true);
     } catch (err: any) {
       console.error('회원가입 실패:', err);
       if (err.message?.includes('duplicate') || err.message?.includes('unique')) {
-        setError('이미 가입된 전화번호입니다.');
+        showAlert('error', '중복 확인', '이미 가입된 전화번호입니다.');
       } else {
-        setError('회원가입에 실패했습니다. 다시 시도해주세요.');
+        showAlert('error', '가입 실패', '회원가입에 실패했습니다.\n다시 시도해주세요.');
       }
     } finally {
       setIsLoading(false);
@@ -110,7 +127,7 @@ const Signup: React.FC<Props> = ({ setView, customers, setCustomers }) => {
         <h3 className="font-bold text-navy-800 mb-3">[개인정보 수집 및 이용 동의]</h3>
 
         <p className="mb-4">
-          청담 파트너 VIP 서비스 이용을 위해 아래와 같이 개인정보를 수집 및 이용합니다.
+          청담 파트너스 VIP 서비스 이용을 위해 아래와 같이 개인정보를 수집 및 이용합니다.
         </p>
 
         <div className="mb-4">
@@ -192,27 +209,27 @@ const Signup: React.FC<Props> = ({ setView, customers, setCustomers }) => {
       <div className="space-y-2">
         <Input
           label="고객명 *"
-          placeholder="홍길동"
+          placeholder="이름을 입력해주세요."
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
         />
         <Input
           label="전화번호 *"
-          placeholder="010-0000-0000"
+          placeholder="번호를 입력해주세요."
           value={formData.phone}
           onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
         />
         <Input
           label="비밀번호 * (4자 이상)"
           type="password"
-          placeholder="••••••••"
+          placeholder="새 비밀번호를 입력해주세요."
           value={formData.password}
           onChange={(e) => setFormData({ ...formData, password: e.target.value })}
         />
         <Input
           label="비밀번호 확인 *"
           type="password"
-          placeholder="••••••••"
+          placeholder="동일한 새 비밀번호를 입력해주세요."
           value={formData.confirmPassword}
           onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
         />
@@ -236,10 +253,6 @@ const Signup: React.FC<Props> = ({ setView, customers, setCustomers }) => {
           </label>
         </div>
       </div>
-
-      {error && (
-        <p className="text-red-500 text-sm mb-4">{error}</p>
-      )}
 
       <Button fullWidth onClick={handleSignup} disabled={isLoading}>
         {isLoading ? '가입 중...' : '회원가입'}
@@ -284,10 +297,32 @@ const Signup: React.FC<Props> = ({ setView, customers, setCustomers }) => {
   );
 
   if (signupComplete) {
-    return renderCompletionScreen();
+    return (
+      <>
+        {renderCompletionScreen()}
+        <AlertModal
+          isOpen={alertModal.isOpen}
+          type={alertModal.type}
+          title={alertModal.title}
+          message={alertModal.message}
+          onClose={closeAlert}
+        />
+      </>
+    );
   }
 
-  return step === 'TERMS' ? renderTermsStep() : renderFormStep();
+  return (
+    <>
+      {step === 'TERMS' ? renderTermsStep() : renderFormStep()}
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        onClose={closeAlert}
+      />
+    </>
+  );
 };
 
 export default Signup;

@@ -11,13 +11,16 @@ interface Props {
 }
 
 const NotificationList: React.FC<Props> = ({ setView, user, notifications, setNotifications }) => {
+  // 공지사항 타입 제외 (개인 알림만 표시)
+  const personalNotifications = notifications.filter(n => n.type !== 'announcement');
+
   useEffect(() => {
-    // Mark all as read when entering
-    const next = notifications.map(n => ({ ...n, isRead: true }));
+    // Mark all personal notifications as read when entering
+    const next = personalNotifications.map(n => ({ ...n, isRead: true }));
     setNotifications(next);
   }, []);
 
-  const sorted = [...notifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const sorted = [...personalNotifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">

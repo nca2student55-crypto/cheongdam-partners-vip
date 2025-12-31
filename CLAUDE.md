@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-청담 파트너 VIP (Cheongdam Partners VIP) - A VIP customer loyalty points management system built with React 19 and TypeScript. Mobile-first SPA for internal use.
+청담 파트너스 VIP (Cheongdam Partners VIP) - A VIP customer loyalty points management system built with React 19 and TypeScript. Mobile-first SPA for internal use.
 
 ## Commands
 
@@ -27,9 +27,8 @@ npm run preview # Preview production build
 Source files are in the root directory, not `src/`:
 - `App.tsx` - Main app component with all state management and view routing
 - `types.ts` - TypeScript type definitions
-- `index.tsx` - Entry point
 - `pages/` - Full-page view components
-- `components/UI.tsx` - Shared primitives (Button, Input, Card)
+- `components/UI.tsx` - Shared primitives (Button, Input, Card, AlertModal)
 - `api/supabase.ts` - Supabase client initialization
 - `api/client.ts` - Supabase API client with all CRUD operations
 
@@ -45,15 +44,20 @@ View-based navigation via `ViewState` union type - no router library. The `rende
 - `UserStatus` - Enum: `PENDING` (대기), `ACTIVE` (활성), `WITHDRAWN` (탈퇴)
 - `Customer` - VIP customer with id, name, phone, password, company, isIndividual, totalPoints, status, timestamps
 - `PointHistory` - Point transactions with id, customerId, points, type, reason, createdAt
-- `Notification` - Alerts with id, customerId, title, content, type ('system'/'message'/'announcement'), createdAt, isRead
-- `Announcement` - Public announcements with id, title, content, isActive, isPinned, createdAt, expiresAt
-- `ViewState` - Union type for all page states (includes `'CUSTOMER_ANNOUNCEMENTS'`)
-- `SignupStep` - `'TERMS' | 'FORM'` for signup flow
-- `Admin` - Admin user with id, username, password, name, createdAt
+- `Notification` - Customer alerts with type ('system'/'message'/'announcement')
+- `Announcement` - Public announcements with isPinned, isActive, expiresAt
+- `Inquiry` - Customer inquiries (profile_change/password_reset)
+- `AdminNotification` - Admin alerts (new_signup/inquiry/withdrawal)
+- `ViewState` - Union type for all page states
 
-### UI Patterns
-- Button variants: `primary`, `secondary`, `gold`, `danger`, `ghost`
-- Modals: Inline with useState (see `AdminDashboard.tsx`)
+### AlertModal Pattern
+All error/success messages use `AlertModal` component:
+```typescript
+const [alertModal, setAlertModal] = useState<AlertModalState>(initialAlertState);
+const showAlert = (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) => {
+  setAlertModal({ isOpen: true, type, title, message });
+};
+```
 
 ### Styling
 Tailwind CSS via CDN configured in `index.html`. Custom colors:
@@ -68,56 +72,67 @@ Tailwind CSS via CDN configured in `index.html`. Custom colors:
 - Client initialization in `api/supabase.ts`
 
 ### Tables
-- **customers**: id, name, phone, password, company, is_individual, total_points, status ('pending'/'active'/'withdrawn'), memo, created_at, withdrawn_at
-- **point_history**: id, customer_id, points, type ('earn'/'use'/'adjust'), reason, created_at
-- **notifications**: id, customer_id, title, content, type ('system'/'message'/'announcement'), is_read, created_at
-- **announcements**: id, title, content, is_active, is_pinned, created_at, expires_at
-- **admins**: id, username, password, name, created_at
+| Table | Key Columns |
+|-------|-------------|
+| customers | id, name, phone, password, company, is_individual, total_points, status, memo |
+| point_history | id, customer_id, points, type ('earn'/'use'/'adjust'), reason |
+| notifications | id, customer_id, title, content, type, is_read |
+| announcements | id, title, content, is_active, is_pinned, expires_at |
+| admins | id, username, password, name |
+| inquiries | id, customer_id, type ('profile_change'/'password_reset'), content (JSONB), status |
+| admin_notifications | id, type ('new_signup'/'inquiry'/'withdrawal'), reference_type, reference_id, title, content, is_read |
 
 ### Data Conversion
 Snake_case (DB) ↔ camelCase (frontend) conversion in `api/client.ts`:
-- `toCustomer()`, `toPointHistory()`, `toNotification()`, `toAdmin()`, `toAnnouncement()` - DB → Frontend
-- Status enum conversion: 'pending' → `UserStatus.PENDING`, 'active' → `UserStatus.ACTIVE`, 'withdrawn' → `UserStatus.WITHDRAWN`
+- `toCustomer()`, `toPointHistory()`, `toNotification()`, `toInquiry()`, `toAdminNotification()` etc.
+- Status enum conversion: 'pending' → `UserStatus.PENDING`
 
 ### Phone Number Handling
 Phone numbers are normalized (digits only) before storage and comparison. Use `normalizePhone()` in `Login.tsx` and `Signup.tsx`.
 
-### Admin Credentials
-Stored in `admins` table. Admin login uses fixed username 'admin' with password-only input.
+## Key Business Flows
 
-## Signup Flow
-
-### Two-Step Process
+### Signup Flow
 1. **TERMS**: Privacy policy agreement (Korean 개인정보보호법 compliance)
-2. **FORM**: Customer information input
+2. **FORM**: Customer info input → Creates customer with `status: 'pending'`
+3. Admin approves via AdminDashboard "승인 대기" tab → Status changes to 'active'
 
-### Approval-Based Registration
-- New customers are created with `status: 'pending'`
-- Pending users cannot login (shows "관리자 승인 대기 중" message)
-- Admin approves via AdminDashboard "승인 대기" tab
-- After approval, status changes to 'active' and user can login
+### Customer Inquiry System
+- ProfileEdit: "관리자 문의" links under name/phone fields
+- Login: "비밀번호 찾기" modal with name/phone input
+- Both create entries in `inquiries` table + admin notification
+
+### Admin Notification System
+AdminDashboard "알림" tab shows notifications for:
+- New signups (green badge)
+- Customer inquiries (blue badge)
+- Withdrawals (red badge)
 
 ## Key API Functions (`api/client.ts`)
 
 ```typescript
-// Customer approval
-api.getPendingCustomers()           // Get list of pending customers
-api.approveCustomer(customerId)     // Approve single customer
-api.approveCustomers(customerIds)   // Bulk approve multiple customers
+// Customer management
+api.getPendingCustomers()
+api.approveCustomer(customerId)
+api.approveCustomers(customerIds)
 
-// Points management
-api.addPoints(customerIds, amount)              // Add points to customers
-api.deductPoints(customerIds, amount, reason)   // Deduct points with reason
+// Points
+api.addPoints(customerIds, amount)
+api.deductPoints(customerIds, amount, reason)
 
-// Messaging
-api.sendMessage(customerIds, title, content)    // Send notification to specific customers
-api.sendMessageToAll(title, content)            // Send notification to all active customers
+// Inquiries (customer → admin)
+api.createProfileChangeInquiry(customerId, field, currentValue)
+api.createPasswordResetInquiry(name, phone)
 
-// Announcements
-api.getActiveAnnouncements()                    // Get active, non-expired announcements
-api.createAnnouncement(announcement)            // Create new announcement
-api.updateAnnouncement(announcement)            // Update existing announcement
-api.deleteAnnouncement(id)                      // Delete announcement
+// Admin notifications
+api.getAdminNotifications()
+api.getUnreadAdminNotificationCount()
+api.markAdminNotificationAsRead(id)
+api.markAllAdminNotificationsAsRead()
+
+// Admin notification triggers (called automatically)
+api.createSignupNotification(customer)
+api.createWithdrawalNotification(customer)
 ```
 
 ## MCP Integration
@@ -127,6 +142,6 @@ Database access for development/debugging:
 - Connection check: `claude mcp list` → `supabase: ✓ Connected`
 - Can execute SQL, apply migrations, view logs directly
 
-## Project Status
-
-See `HANDOVER.md` for detailed project status, known issues, and next steps.
+## Admin Credentials
+- Username: `admin`
+- Password: `cheongdam2024!`

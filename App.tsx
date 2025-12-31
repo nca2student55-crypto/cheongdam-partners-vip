@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ViewState, Customer, PointHistory, Notification } from './types';
+import { ViewState, Customer, PointHistory, Notification, Announcement } from './types';
 import { initialCustomers, initialPointHistory, initialNotifications } from './mockData';
 import { api, isApiAvailable } from './api/client';
 
@@ -22,6 +22,7 @@ const App: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [pointHistory, setPointHistory] = useState<PointHistory[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [currentUser, setCurrentUser] = useState<Customer | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,10 +35,14 @@ const App: React.FC = () => {
     setIsLoading(true);
     try {
       if (isApiAvailable()) {
-        const data = await api.getAllData();
+        const [data, activeAnnouncements] = await Promise.all([
+          api.getAllData(),
+          api.getActiveAnnouncements(),
+        ]);
         setCustomers(data.customers.length > 0 ? data.customers : initialCustomers);
         setPointHistory(data.pointHistory.length > 0 ? data.pointHistory : initialPointHistory);
         setNotifications(data.notifications.length > 0 ? data.notifications : initialNotifications);
+        setAnnouncements(activeAnnouncements);
       } else {
         const storedCustomers = localStorage.getItem('cp_customers');
         const storedHistory = localStorage.getItem('cp_point_history');
@@ -108,6 +113,27 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('포인트 적립 실패:', error);
+    }
+  };
+
+  const deductPointFromCustomer = async (ids: string[], amount: number, reason: string) => {
+    try {
+      const result = await api.deductPoints(ids, amount, reason);
+      const updatedCustomers = customers.map(c => {
+        const updated = result.customers.find(uc => uc.id === c.id);
+        return updated || c;
+      });
+      setCustomers(updatedCustomers);
+      setPointHistory([...pointHistory, ...result.pointHistory]);
+      setNotifications([...notifications, ...result.notifications]);
+      if (!isApiAvailable()) {
+        localStorage.setItem('cp_customers', JSON.stringify(updatedCustomers));
+        localStorage.setItem('cp_point_history', JSON.stringify([...pointHistory, ...result.pointHistory]));
+        localStorage.setItem('cp_notifications', JSON.stringify([...notifications, ...result.notifications]));
+      }
+    } catch (error) {
+      console.error('포인트 차감 실패:', error);
+      throw error;
     }
   };
 
@@ -184,6 +210,7 @@ const App: React.FC = () => {
           setView={setView}
           customers={customers}
           onAddPoints={addPointToCustomer}
+          onDeductPoints={deductPointFromCustomer}
           onUpdateCustomer={updateCustomer}
           onDeleteCustomer={deleteCustomer}
           handleLogout={handleLogout}
@@ -194,6 +221,7 @@ const App: React.FC = () => {
           user={currentUser!}
           totalCount={customers.length}
           notifications={notifications.filter(n => n.customerId === currentUser?.id)}
+          announcements={announcements}
         />;
       case 'PASSWORD_RESET':
         return <PasswordReset setView={setView} customers={customers} onUpdateCustomer={updateCustomer} />;

@@ -1,19 +1,30 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ViewState, Customer, Notification, Announcement } from '../types';
 import { Card, Button } from '../components/UI';
-import { api } from '../api/client';
 
 interface Props {
   setView: (v: ViewState) => void;
   user: Customer;
   totalCount: number;
   notifications: Notification[];
+  announcements: Announcement[];
 }
 
-const CustomerDashboard: React.FC<Props> = ({ setView, user, totalCount, notifications }) => {
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+const CustomerDashboard: React.FC<Props> = ({ setView, user, totalCount, notifications, announcements }) => {
+  const unreadCount = notifications.filter(n => !n.isRead && n.type !== 'announcement').length;
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  // 새 공지사항 개수 계산 (마지막 확인 시간 이후)
+  const getNewAnnouncementCount = () => {
+    const lastCheckedStr = localStorage.getItem('cp_last_announcement_check');
+    if (!lastCheckedStr) {
+      return announcements.length;
+    }
+    const lastChecked = new Date(lastCheckedStr);
+    return announcements.filter(a => new Date(a.createdAt) > lastChecked).length;
+  };
+  const newAnnouncementCount = getNewAnnouncementCount();
 
   return (
     <div className="flex flex-col min-h-screen pb-10">
@@ -53,15 +64,36 @@ const CustomerDashboard: React.FC<Props> = ({ setView, user, totalCount, notific
         <button onClick={() => setShowLogoutModal(true)} className="p-2 hover:bg-navy-700 rounded-full transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
-        <h1 className="text-lg font-bold tracking-tight">청담 파침침IP</h1>
-        <button onClick={() => setView('NOTIFICATIONS')} className="relative p-2 hover:bg-navy-700 rounded-full transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-          {unreadCount > 0 && (
-            <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full border-2 border-navy-800">
-              {unreadCount}
-            </span>
-          )}
-        </button>
+        <h1 className="text-lg font-bold tracking-tight">청담 파트너스VIP</h1>
+        <div className="flex items-center space-x-1">
+          {/* 공지사항 아이콘 */}
+          <button
+            onClick={() => {
+              localStorage.setItem('cp_last_announcement_check', new Date().toISOString());
+              setView('CUSTOMER_ANNOUNCEMENTS');
+            }}
+            className="relative p-2 hover:bg-navy-700 rounded-full transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m3 11 18-5v12L3 13v-2z"/>
+              <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
+            </svg>
+            {newAnnouncementCount > 0 && (
+              <span className="absolute top-1 right-1 w-4 h-4 bg-gold-400 text-navy-800 text-[10px] flex items-center justify-center rounded-full border-2 border-navy-800 font-bold">
+                {newAnnouncementCount > 9 ? '9+' : newAnnouncementCount}
+              </span>
+            )}
+          </button>
+          {/* 알림 아이콘 */}
+          <button onClick={() => setView('NOTIFICATIONS')} className="relative p-2 hover:bg-navy-700 rounded-full transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full border-2 border-navy-800">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+        </div>
       </header>
 
       <div className="p-6 space-y-6">
