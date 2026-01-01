@@ -25,17 +25,25 @@ npm run preview # Preview production build
 
 ### File Layout (Non-standard)
 Source files are in the root directory, not `src/`:
-- `App.tsx` - Main app component with all state management and view routing
+- `App.tsx` - Main app component with all state management, view routing, and Realtime subscriptions
 - `types.ts` - TypeScript type definitions
+- `index.tsx` - Entry point
 - `pages/` - Full-page view components
 - `components/UI.tsx` - Shared primitives (Button, Input, Card, AlertModal)
 - `api/supabase.ts` - Supabase client initialization
-- `api/client.ts` - Supabase API client with all CRUD operations
+- `api/client.ts` - Supabase API client with all CRUD operations and data conversion functions
 
 Path alias: `@/` maps to project root (configured in `vite.config.ts`)
 
 ### State Management
-All state lives in `App.tsx` using React hooks (`useState`/`useEffect`). Data flows from Supabase via `api/client.ts`.
+All state lives in `App.tsx` using React hooks (`useState`/`useEffect`). Data flows exclusively from Supabase - no localStorage fallback or mock data.
+
+### Realtime Data Sync
+Supabase Realtime subscriptions in `App.tsx` and `AdminDashboard.tsx` auto-update state on DB changes:
+- `customers`, `notifications`, `announcements`, `point_history` (App.tsx)
+- `admin_notifications`, `customers`, `announcements` (AdminDashboard.tsx)
+
+Conversion functions are exported from `api/client.ts`: `toCustomer()`, `toNotification()`, `toAnnouncement()`, `toAdminNotification()`
 
 ### Navigation
 View-based navigation via `ViewState` union type - no router library. The `renderView()` switch statement in `App.tsx` maps view states to page components. Each page receives `setView` callback plus needed state/handlers as props.
@@ -81,6 +89,9 @@ Tailwind CSS via CDN configured in `index.html`. Custom colors:
 | admins | id, username, password, name |
 | inquiries | id, customer_id, type ('profile_change'/'password_reset'), content (JSONB), status |
 | admin_notifications | id, type ('new_signup'/'inquiry'/'withdrawal'), reference_type, reference_id, title, content, is_read |
+
+### Realtime Publication
+All tables above are registered in `supabase_realtime` publication for live updates.
 
 ### Data Conversion
 Snake_case (DB) ↔ camelCase (frontend) conversion in `api/client.ts`:

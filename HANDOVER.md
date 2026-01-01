@@ -1,6 +1,6 @@
 # 프로젝트 인계 문서
 
-> 최종 업데이트: 2026-01-01 (공지사항/알림 UI 분리 완료)
+> 최종 업데이트: 2026-01-01 (Supabase Realtime 실시간 동기화 구현)
 > 프로젝트: 청담 파트너스 VIP
 
 ---
@@ -28,9 +28,116 @@ npm run build   # 프로덕션 빌드
 2. **회원가입 약관 동의 UI** - 개인정보보호법 준수 약관 동의 단계 추가
 3. **회원가입 승인 시스템** - 관리자 승인 기반 회원가입 플로우 구현
 4. **공지사항/알림 UI 분리** - 고객 대시보드에서 공지사항과 개인 알림 분리 표시
+5. **고객 문의 시스템** - 프로필 변경/비밀번호 찾기 문의 → 관리자 알림
+6. **Supabase Realtime 실시간 동기화** - 데이터 변경 시 앱 자동 갱신 (새로고침 불필요)
+7. **mockData 제거** - Supabase 백엔드 전용으로 전환 (테스트 더미 데이터 제거)
 
 ### 🚧 삭제된 기능
 - **Firebase Phone Auth SMS 인증** - 제거됨 (reCAPTCHA 설정 문제로 인해)
+- **mockData / localStorage 폴백** - 제거됨 (Supabase 전용으로 전환)
+
+---
+
+## ✅ 완료: Supabase Realtime 실시간 동기화
+
+### 배경
+- 회원가입, 공지 등록 등 데이터 변경 시 앱 재시작 없이는 업데이트가 반영되지 않았음
+- Supabase Realtime을 통해 WebSocket 기반 실시간 데이터 동기화 구현
+
+### 구현 내용
+
+#### App.tsx - Realtime 구독
+```typescript
+// 구독 테이블: customers, notifications, announcements, point_history
+const customersChannel = supabase
+  .channel('customers-changes')
+  .on('postgres_changes',
+    { event: '*', schema: 'public', table: 'customers' },
+    (payload) => {
+      // INSERT/UPDATE/DELETE 이벤트 처리
+    }
+  ).subscribe();
+```
+
+#### AdminDashboard.tsx - Realtime 구독
+```typescript
+// 구독 테이블: admin_notifications, customers, announcements
+// 관리자 알림 실시간 수신, 승인 대기 목록 자동 갱신
+```
+
+### 주요 변경 파일
+| 파일 | 변경 내용 |
+|------|----------|
+| `api/client.ts` | 변환 함수 4개 export (`toCustomer`, `toNotification`, `toAnnouncement`, `toAdminNotification`) |
+| `App.tsx` | Realtime 구독 useEffect 추가, mockData/localStorage 제거 |
+| `pages/AdminDashboard.tsx` | admin_notifications, customers, announcements 구독 추가 |
+
+### Supabase Realtime 설정 (DB)
+```sql
+-- 테이블을 Realtime publication에 등록 (이미 완료됨)
+ALTER PUBLICATION supabase_realtime ADD TABLE customers;
+ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+ALTER PUBLICATION supabase_realtime ADD TABLE announcements;
+ALTER PUBLICATION supabase_realtime ADD TABLE point_history;
+ALTER PUBLICATION supabase_realtime ADD TABLE admin_notifications;
+```
+
+### 실시간 동기화 동작
+| 이벤트 | 자동 반영 |
+|--------|----------|
+| 새 회원가입 | 관리자 "승인 대기" 탭에 즉시 표시 |
+| 고객 승인 | 고객 목록 즉시 갱신 |
+| 포인트 적립/차감 | 고객 포인트 즉시 반영 |
+| 공지 등록/수정 | 고객 앱에 즉시 표시 |
+| 관리자 알림 | 알림 뱃지 즉시 갱신 |
+
+### Realtime 동시 접속 한계 (Free Plan)
+| 항목 | 제한 |
+|------|------|
+| 동시 연결 | 200개 |
+| 월간 메시지 | 2백만 |
+| 대역폭 | 5GB/월 |
+
+---
+
+## ✅ 완료: 고객 문의 및 관리자 알림 시스템
+
+### 테이블 추가
+#### inquiries
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| customer_id | UUID | FK → customers (NULL 허용) |
+| type | TEXT | 'profile_change' / 'password_reset' |
+| content | JSONB | 문의 내용 (field, currentValue 등) |
+| status | TEXT | 'pending' / 'resolved' |
+| created_at | TIMESTAMPTZ | 자동생성 |
+
+#### admin_notifications
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | UUID | PK |
+| type | TEXT | 'new_signup' / 'inquiry' / 'withdrawal' |
+| reference_type | TEXT | 'customer' / 'inquiry' |
+| reference_id | UUID | 참조 ID |
+| title | TEXT | 알림 제목 |
+| content | TEXT | 알림 내용 |
+| is_read | BOOLEAN | 읽음 여부 |
+| created_at | TIMESTAMPTZ | 자동생성 |
+
+### 문의 플로우
+```
+[고객 프로필 변경 문의]
+프로필 수정 → "관리자 문의" 클릭 → inquiries 생성 → admin_notifications 생성
+
+[비밀번호 찾기 문의]
+로그인 → "비밀번호 찾기" → 이름/전화번호 입력 → inquiries 생성 → admin_notifications 생성
+```
+
+### 관리자 알림 UI
+- AdminDashboard "알림" 탭에서 확인
+- 알림 타입별 색상: 가입(녹색), 문의(파란색), 탈퇴(빨간색)
+- 개별/전체 읽음 처리 가능
 
 ---
 
@@ -66,6 +173,7 @@ npm run build   # 프로덕션 빌드
 | customer_id | UUID | FK → customers |
 | points | INTEGER | 포인트 금액 |
 | type | TEXT | 'earn' / 'use' / 'adjust' |
+| reason | TEXT | 사유 |
 | created_at | TIMESTAMPTZ | 자동생성 |
 
 #### notifications
@@ -126,87 +234,25 @@ npm run build   # 프로덕션 빌드
 | ACTIVE | 활성 | 승인 완료, 로그인 가능 |
 | WITHDRAWN | 탈퇴 | 탈퇴 처리됨 |
 
-### 주요 변경 파일
-| 파일 | 변경 내용 |
-|------|----------|
-| `types.ts` | UserStatus에 PENDING 추가 |
-| `api/client.ts` | 상태 변환 로직 + 승인 API 3개 추가 |
-| `pages/Signup.tsx` | PENDING 상태 생성 + 약관 동의 + 완료 화면 |
-| `pages/Login.tsx` | PENDING 상태 로그인 차단 |
-| `pages/AdminDashboard.tsx` | 탭 네비게이션 + 승인 대기 목록 UI |
-
-### 승인 API (api/client.ts)
-```typescript
-api.getPendingCustomers()           // 대기 고객 목록 조회
-api.approveCustomer(customerId)     // 단일 승인
-api.approveCustomers(customerIds)   // 일괄 승인
-```
-
----
-
-## ✅ 완료: 회원가입 약관 동의
-
-### 개인정보보호법 필수 고지 항목
-1. **수집 목적**: VIP 고객 포인트 적립/관리, 서비스 안내
-2. **수집 항목**: 필수(이름, 전화번호, 비밀번호), 선택(업체명)
-3. **보유 기간**: 회원 탈퇴 시까지, 탈퇴 후 즉시 파기
-4. **동의 거부권**: 거부 가능하나 서비스 이용 제한
-
-### 회원가입 단계 (SignupStep)
-```
-TERMS → FORM → 완료
-```
-
 ---
 
 ## ✅ 완료: 공지사항/알림 UI 분리
 
-### 배경
-- 관리자가 보내는 메세지와 공지사항을 고객이 볼 수 없었음
-- CustomerAnnouncements 페이지가 존재했으나 접근 경로 없음
-- NotificationList가 모든 알림 유형을 동일하게 표시
-
-### 구현 내용
-
-#### CustomerDashboard 헤더 변경
+### CustomerDashboard 헤더
 ```
-변경 전: [←]  청담 파트너스VIP  [🔔]
-변경 후: [←]  청담 파트너스VIP  [📢] [🔔]
-                              공지  알림
+[←]  청담 파트너스VIP  [📢] [🔔]
+                      공지  알림
 ```
 
 - **📢 공지사항 아이콘**: `CUSTOMER_ANNOUNCEMENTS` 페이지로 이동
-  - 골드색 뱃지로 새 공지 개수 표시
-  - 클릭 시 localStorage에 마지막 확인 시간 저장
+- **🔔 알림 아이콘**: `NOTIFICATIONS` 페이지로 이동 (개인 알림만)
 
-- **🔔 알림 아이콘**: `NOTIFICATIONS` 페이지로 이동 (기존)
-  - 빨간색 뱃지로 읽지 않은 알림 개수 표시
-  - announcement 타입 제외 (개인 메세지/시스템 알림만)
-
-### 주요 변경 파일
-| 파일 | 변경 내용 |
-|------|----------|
-| `App.tsx` | announcements 상태 추가, CustomerDashboard에 props 전달 |
-| `pages/CustomerDashboard.tsx` | 헤더에 공지 아이콘 추가, 새 공지 뱃지 로직 |
-| `pages/NotificationList.tsx` | announcement 타입 필터링 |
-
-### localStorage 키
+### localStorage 키 (현재 사용 중)
 | 키 | 용도 |
 |----|------|
-| `cp_last_announcement_check` | 마지막 공지사항 확인 시간 |
-| `cp_customers` | 오프라인 폴백 - 고객 데이터 |
-| `cp_point_history` | 오프라인 폴백 - 포인트 이력 |
-| `cp_notifications` | 오프라인 폴백 - 알림 데이터 |
+| `cp_last_announcement_check` | 마지막 공지사항 확인 시간 (새 공지 뱃지용) |
 
-### 관련 API (api/client.ts)
-```typescript
-api.getActiveAnnouncements()                    // 활성 공지 조회 (만료 제외)
-api.createAnnouncement(announcement)            // 공지 생성
-api.updateAnnouncement(announcement)            // 공지 수정
-api.deleteAnnouncement(id)                      // 공지 삭제
-api.sendMessage(customerIds, title, content)    // 특정 고객에게 메세지 발송
-api.sendMessageToAll(title, content)            // 전체 활성 고객에게 메세지 발송
-```
+> **참고**: `cp_customers`, `cp_point_history`, `cp_notifications` 키는 더 이상 사용하지 않음 (오프라인 폴백 제거됨)
 
 ---
 
@@ -214,26 +260,27 @@ api.sendMessageToAll(title, content)            // 전체 활성 고객에게 �
 
 ```
 project/
-├── App.tsx                    # 메인 앱 (상태 관리, 라우팅)
+├── App.tsx                    # 메인 앱 (상태 관리, 라우팅, Realtime 구독)
 ├── types.ts                   # TypeScript 타입 정의
+├── index.tsx                  # 엔트리 포인트
 ├── index.html                 # HTML 템플릿
 ├── api/
 │   ├── supabase.ts            # Supabase 클라이언트 초기화
-│   └── client.ts              # Supabase API 클라이언트
+│   └── client.ts              # Supabase API 클라이언트 + 변환 함수
 ├── components/
 │   └── UI.tsx                 # 공통 UI 컴포넌트
 ├── pages/
 │   ├── Main.tsx               # 메인 화면
-│   ├── Login.tsx              # 고객 로그인 (PENDING 체크)
+│   ├── Login.tsx              # 고객 로그인 (PENDING 체크, 비밀번호 찾기)
 │   ├── Signup.tsx             # 회원가입 (약관동의 → 폼 → 완료)
 │   ├── AdminLogin.tsx         # 관리자 로그인 (비밀번호만)
-│   ├── AdminDashboard.tsx     # 관리자 대시보드 (탭: 승인대기 | 고객목록)
+│   ├── AdminDashboard.tsx     # 관리자 대시보드 (Realtime 구독 포함)
 │   ├── CustomerDashboard.tsx  # 고객 대시보드 (📢공지 + 🔔알림 아이콘)
-│   ├── CustomerAnnouncements.tsx  # 공지사항 목록 (고정공지 + 일반공지)
-│   ├── ProfileEdit.tsx        # 프로필 수정
+│   ├── CustomerAnnouncements.tsx  # 공지사항 목록
+│   ├── ProfileEdit.tsx        # 프로필 수정 (관리자 문의 기능)
 │   ├── PasswordReset.tsx      # 비밀번호 재설정
 │   ├── PointHistory.tsx       # 포인트 이력
-│   └── NotificationList.tsx   # 알림 목록 (개인 메세지/시스템 알림만)
+│   └── NotificationList.tsx   # 알림 목록 (개인 알림만)
 └── .github/workflows/
     └── deploy.yml             # GitHub Pages 배포
 ```
@@ -247,6 +294,7 @@ project/
 | `firebase/` | Firebase 제거 |
 | `hooks/usePhoneAuth.ts` | SMS 인증 제거 |
 | `google-apps-script/` | Google Sheets 제거 |
+| `mockData.ts` | Supabase 전용 전환으로 더 이상 사용 안함 (import만 제거, 파일은 존재) |
 
 ---
 
@@ -288,7 +336,8 @@ claude mcp list  # supabase: ✓ Connected 확인
 2. **MCP 연결**: `claude mcp list` → supabase 연결 확인
 3. **회원가입 테스트**: 약관 동의 → 폼 작성 → "승인 대기" 화면 표시
 4. **관리자 승인 테스트**: 관리자 로그인 → 승인 대기 탭 → 승인 버튼
-5. **공지사항/알림 테스트**: 고객 로그인 → 대시보드 헤더에서 📢/🔔 아이콘 확인 → 각각 별도 페이지 이동
+5. **실시간 동기화 테스트**: 브라우저 탭 2개 → 한쪽에서 데이터 변경 → 다른 탭에서 자동 반영 확인
+6. **공지사항/알림 테스트**: 고객 로그인 → 대시보드 헤더에서 📢/🔔 아이콘 확인
 
 ---
 
@@ -299,4 +348,4 @@ claude mcp list  # supabase: ✓ Connected 확인
 
 ---
 
-*최종 업데이트: 2026-01-01 - 공지사항/알림 UI 분리 완료*
+*최종 업데이트: 2026-01-01 - Supabase Realtime 실시간 동기화 구현, mockData/localStorage 제거*
