@@ -532,7 +532,7 @@ export const api = {
         .insert({
           customer_id: customerId,
           title: '포인트 차감',
-          content: `${amount.toLocaleString()} 포인트가 차감되었습니다. (사유: ${reason})`,
+          content: `${amount.toLocaleString()} 포인트가 차감되었습니다.${reason.trim() ? ` (사유: ${reason.trim()})` : ''}`,
           is_read: false,
         })
         .select()
