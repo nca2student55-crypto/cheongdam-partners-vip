@@ -44,7 +44,7 @@ const AdminDashboard: React.FC<Props> = ({
 
   // 확인 모달 상태
   const [confirmModal, setConfirmModal] = useState<{
-    type: 'withdraw' | 'restore' | 'delete' | null;
+    type: 'withdraw' | 'restore' | 'delete' | 'logout' | null;
     isOpen: boolean;
   }>({ type: null, isOpen: false });
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
@@ -550,7 +550,7 @@ const AdminDashboard: React.FC<Props> = ({
       {/* Header */}
       <header className="bg-navy-800 text-white p-4 flex items-center justify-between sticky top-0 z-10">
         <span className="font-bold text-white">관리자 모드</span>
-        <button onClick={handleLogout} className="text-xs bg-navy-900 px-3 py-1 rounded">로그아웃</button>
+        <button onClick={() => setConfirmModal({ type: 'logout', isOpen: true })} className="text-xs bg-navy-900 px-3 py-1 rounded">로그아웃</button>
       </header>
 
       {/* Tab Navigation */}
@@ -1348,6 +1348,28 @@ const AdminDashboard: React.FC<Props> = ({
       )}
 
       {/* Confirm Modal */}
+      {confirmModal.isOpen && confirmModal.type === 'logout' && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+          <Card className="w-full max-w-sm p-6 space-y-4">
+            <div className="text-center">
+              <div className="w-12 h-12 bg-navy-100 rounded-full flex items-center justify-center mx-auto mb-3" style={{backgroundColor: '#E8EAF6'}}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1A237E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              </div>
+              <h3 className="text-lg font-bold text-gray-800">로그아웃</h3>
+              <p className="text-sm text-gray-500 mt-2">정말 로그아웃 하시겠습니까?</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="secondary" fullWidth onClick={() => setConfirmModal({ type: null, isOpen: false })}>
+                취소
+              </Button>
+              <Button variant="primary" fullWidth onClick={() => { setConfirmModal({ type: null, isOpen: false }); handleLogout(); }}>
+                로그아웃
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {confirmModal.isOpen && editingCustomer && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
           <Card className="w-full max-w-sm p-6 space-y-4">
