@@ -286,6 +286,9 @@ const AdminDashboard: React.FC<Props> = ({
 
   const activeCount = customers.filter(c => c.status === UserStatus.ACTIVE).length;
   const withdrawnCount = customers.filter(c => c.status === UserStatus.WITHDRAWN).length;
+  const totalPointsSum = customers
+    .filter(c => c.status === UserStatus.ACTIVE)
+    .reduce((sum, c) => sum + c.totalPoints, 0);
   const pendingCount = pendingCustomers.length;
 
   // 승인 핸들러
@@ -783,7 +786,23 @@ const AdminDashboard: React.FC<Props> = ({
           </div>
 
           {/* Bulk Point Entry */}
-          <div className="p-4 bg-gray-100 flex items-center space-x-2 sticky top-[104px] z-10 shadow-sm">
+          <div className="p-4 bg-gray-100 flex items-center space-x-3 sticky top-[104px] z-10 shadow-sm">
+            {/* 총 보유 포인트 - 좌측 */}
+            <div className="flex flex-col items-center shrink-0 w-[90px]">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider whitespace-nowrap">총 보유 포인트</span>
+              <span
+                className={`font-bold whitespace-nowrap ${
+                  totalPointsSum >= 1_000_000_000 ? 'text-[9px]' :
+                  totalPointsSum >= 100_000_000  ? 'text-[10px]' :
+                  totalPointsSum >= 10_000_000   ? 'text-[11px]' :
+                  totalPointsSum >= 1_000_000    ? 'text-xs' : 'text-sm'
+                }`}
+                style={{ color: '#F97114' }}
+              >
+                {totalPointsSum.toLocaleString()} P
+              </span>
+            </div>
+            {/* 지급 포인트 입력 - 중앙 */}
             <div className="flex-1">
               <input
                 type="number"
@@ -793,7 +812,8 @@ const AdminDashboard: React.FC<Props> = ({
                 onChange={(e) => setPointInput(e.target.value)}
               />
             </div>
-            <Button variant="gold" className="text-sm py-2 px-4" onClick={handlePointSubmit}>
+            {/* 매출 지급 - 우측 */}
+            <Button variant="gold" className="text-sm py-2 px-4 shrink-0" onClick={handlePointSubmit}>
               매출 지급
             </Button>
           </div>
@@ -1553,6 +1573,7 @@ const AdminDashboard: React.FC<Props> = ({
           </Card>
         </div>
       )}
+
 
       {/* Alert Modal */}
       <AlertModal
