@@ -252,7 +252,6 @@ const App: React.FC = () => {
         return <AdminLogin setView={setView} setIsAdmin={setIsAdmin} />;
       case 'ADMIN_DASHBOARD':
         return <AdminDashboard
-          setView={setView}
           customers={customers}
           onAddPoints={addPointToCustomer}
           onDeductPoints={deductPointFromCustomer}
