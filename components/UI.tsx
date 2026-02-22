@@ -51,17 +51,16 @@ export const Input: React.FC<InputProps> = ({ label, error, className = '', ...p
   );
 };
 
-interface CardProps {
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   className?: string;
-  onClick?: () => void;
 }
 
-export const Card: React.FC<CardProps> = ({ children, className = '', onClick }) => {
+export const Card: React.FC<CardProps> = ({ children, className = '', ...props }) => {
   return (
     <div
       className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}
-      onClick={onClick}
+      {...props}
     >
       {children}
     </div>

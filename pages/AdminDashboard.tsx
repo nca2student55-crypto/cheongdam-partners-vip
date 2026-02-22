@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Customer, UserStatus, Announcement, AdminNotification } from '../types';
 import { Button, Input, Card, AlertModal, AlertModalState, initialAlertState } from '../components/UI';
 import { api } from '../api/client';
@@ -30,6 +30,8 @@ const AdminDashboard: React.FC<Props> = ({
   // 관리자 알림 상태
   const [adminNotifications, setAdminNotifications] = useState<AdminNotification[]>([]);
   const [unreadAlertCount, setUnreadAlertCount] = useState(0);
+  const [deleteNotificationId, setDeleteNotificationId] = useState<string | null>(null);
+  const notifLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [search, setSearch] = useState('');
   const [pointInput, setPointInput] = useState('');
@@ -224,6 +226,33 @@ const AdminDashboard: React.FC<Props> = ({
     } catch (error) {
       console.error('전체 읽음 처리 실패:', error);
       showAlert('error', '실패', '읽음 처리에 실패했습니다.');
+    }
+  };
+
+  const handleNotifLongPressStart = (id: string) => {
+    notifLongPressTimerRef.current = setTimeout(() => setDeleteNotificationId(id), 500);
+  };
+
+  const handleNotifLongPressEnd = () => {
+    if (notifLongPressTimerRef.current) {
+      clearTimeout(notifLongPressTimerRef.current);
+      notifLongPressTimerRef.current = null;
+    }
+  };
+
+  const handleDeleteAdminNotification = async () => {
+    if (!deleteNotificationId) return;
+    try {
+      await api.deleteAdminNotification(deleteNotificationId);
+      const deleted = adminNotifications.find(n => n.id === deleteNotificationId);
+      setAdminNotifications(prev => prev.filter(n => n.id !== deleteNotificationId));
+      if (deleted && !deleted.isRead) {
+        setUnreadAlertCount(prev => Math.max(0, prev - 1));
+      }
+    } catch (error) {
+      console.error('알림 삭제 실패:', error);
+    } finally {
+      setDeleteNotificationId(null);
     }
   };
 
@@ -987,7 +1016,7 @@ const AdminDashboard: React.FC<Props> = ({
                   return (
                     <div
                       key={notification.id}
-                      className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${
+                      className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors select-none ${
                         !notification.isRead ? 'bg-blue-50' : ''
                       }`}
                       onClick={() => {
@@ -995,6 +1024,13 @@ const AdminDashboard: React.FC<Props> = ({
                           handleMarkNotificationAsRead(notification.id);
                         }
                       }}
+                      onTouchStart={() => handleNotifLongPressStart(notification.id)}
+                      onTouchEnd={handleNotifLongPressEnd}
+                      onTouchMove={handleNotifLongPressEnd}
+                      onMouseDown={() => handleNotifLongPressStart(notification.id)}
+                      onMouseUp={handleNotifLongPressEnd}
+                      onMouseLeave={handleNotifLongPressEnd}
+                      onContextMenu={(e) => e.preventDefault()}
                     >
                       <div className="flex items-start gap-3">
                         {/* 읽지 않음 표시 */}
@@ -1040,6 +1076,32 @@ const AdminDashboard: React.FC<Props> = ({
                 })}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 관리자 알림 삭제 확인 팝업 */}
+      {deleteNotificationId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-bold text-gray-800">알림 삭제</h3>
+              <p className="text-sm text-gray-500">이 알림을 삭제하시겠습니까?</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteNotificationId(null)}
+                className="flex-1 px-4 py-3 rounded-lg border-2 border-gray-300 text-gray-700 font-semibold"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleDeleteAdminNotification}
+                className="flex-1 px-4 py-3 rounded-lg bg-red-600 text-white font-semibold"
+              >
+                삭제
+              </button>
+            </div>
           </div>
         </div>
       )}

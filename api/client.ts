@@ -853,6 +853,24 @@ export const api = {
       .update({ is_read: true })
       .eq('is_read', false);
   },
+
+  // 고객 알림 삭제
+  async deleteNotification(id: string): Promise<void> {
+    const { error } = await supabase.from('notifications').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // 포인트 이력 삭제
+  async deletePointHistory(id: string): Promise<void> {
+    const { error } = await supabase.from('point_history').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // 관리자 알림 삭제
+  async deleteAdminNotification(id: string): Promise<void> {
+    const { error } = await supabase.from('admin_notifications').delete().eq('id', id);
+    if (error) throw error;
+  },
 };
 
 export default api;

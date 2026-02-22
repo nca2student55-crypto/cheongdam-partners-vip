@@ -191,6 +191,10 @@ const App: React.FC = () => {
     }
   };
 
+  const deletePointHistory = (id: string) => {
+    setPointHistory(prev => prev.filter(h => h.id !== id));
+  };
+
   const deleteCustomer = async (id: string) => {
     try {
       await api.deleteCustomer(id);
@@ -274,6 +278,7 @@ const App: React.FC = () => {
           setView={setView}
           user={currentUser!}
           history={pointHistory.filter(h => h.customerId === currentUser?.id)}
+          onDeleteHistory={deletePointHistory}
         />;
       case 'PROFILE_EDIT':
         return <ProfileEdit
