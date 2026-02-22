@@ -86,6 +86,17 @@ const AdminDashboard: React.FC<Props> = ({
     setAlertModal(initialAlertState);
   };
 
+  // Android 뒤로가기 차단
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href);
+    const handlePopState = () => {
+      window.history.pushState(null, '', window.location.href);
+      showAlert('warning', '뒤로가기 불가', '나가려면 우상단 로그아웃 버튼을 눌러주세요.');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   // 대기 고객, 공지사항, 알림 로드
   useEffect(() => {
     loadPendingCustomers();
