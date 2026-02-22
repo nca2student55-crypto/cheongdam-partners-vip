@@ -342,11 +342,6 @@ const AdminDashboard: React.FC<Props> = ({
       return;
     }
 
-    if (pointAdjustMode === 'deduct' && !pointAdjustReason.trim()) {
-      showAlert('warning', '입력 필요', '차감 사유를 입력해주세요.');
-      return;
-    }
-
     setIsAdjusting(true);
     try {
       if (pointAdjustMode === 'earn') {
@@ -1327,7 +1322,7 @@ const AdminDashboard: React.FC<Props> = ({
                   {pointAdjustMode === 'deduct' && (
                     <Input
                       label="차감 사유"
-                      placeholder="차감 사유를 입력하세요 (필수)"
+                      placeholder="차감 사유를 입력하세요 (선택)"
                       value={pointAdjustReason}
                       onChange={e => setPointAdjustReason(e.target.value)}
                     />
